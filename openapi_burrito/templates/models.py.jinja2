@@ -1,0 +1,114 @@
+from dataclasses import dataclass
+from http import HTTPStatus
+from typing import Annotated, Any, Final, Generic, Literal, NotRequired, Optional, TypeAlias, TypedDict, TypeVar, cast
+
+import httpx
+
+T = TypeVar("T")
+E = TypeVar("E")
+
+# Type wrappers to indicate the category of parameters
+Query = Annotated[T, "query"]
+Header = Annotated[T, "header"]
+Cookie = Annotated[T, "cookie"]
+
+
+class UnsetType:
+    """
+    A sentinel value to represent unset parameters.
+
+    Used to differentiate between an explicit `None` (JSON null) and a
+    parameter that was omitted from the request.
+
+    Any UNSET parameter will be omitted from the serialized request.
+    """
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+class RequiredType:
+    """
+    A sentinel value to represent required parameters.
+
+    Used to explicitly mark parameters as required in function signatures.
+
+    Any REQUIRED parameter must be provided by the caller, or a TypeError will be raised.
+    """
+    def __repr__(self) -> str:
+        return "REQUIRED"
+
+
+# We cast to Any to "pretend" to the type checker that this is a valid
+# default for any type hint, keeping the function signatures clean.
+UNSET: Final[Any] = cast(Any, UnsetType())
+"""
+The sentinel instance used for optional parameters.
+
+Example:
+    >>> def foo(a: str | None = UNSET):
+    ...     if isinstance(a, UnsetType):
+    ...         return "a is unset"
+    ...     return f"set to {a}"
+    >>> foo()
+    'unset'
+    >>> foo("5")
+    'set to 5'
+    >>> foo(None)
+    'set to None'
+"""
+
+REQUIRED: Final[Any] = cast(Any, RequiredType())
+"""
+The sentinel instance used for required parameters.
+
+Example:
+    >>> def foo(a: str = REQUIRED):
+    ...     if isinstance(a, RequiredType):
+    ...         raise TypeError("Missing required parameter 'a'")
+    ...     return f"set to {a}"
+    >>> foo("5")
+    'set to 5'
+    >>> foo()  # Raises TypeError
+"""
+
+
+@dataclass
+class Result(Generic[T, E]):
+    data: Optional[T] = None
+    error: Optional[E] = None
+    status_code: int = 0
+    _response: httpx.Response = None
+    """The underlying HTTP response object."""
+
+    @property
+    def is_success(self) -> bool:
+        return HTTPStatus(self.status_code).is_success
+
+# -------------------------------------------------------------------------
+# Generated models
+# -------------------------------------------------------------------------
+
+{% for model in models %}
+
+class {{ model.name }}(TypedDict):
+{%- if model.doc %}
+    """
+    {{ model.doc | indent(4) }}
+    """
+    {%- endif %}
+    {%- for prop in model.properties %}
+    {{ prop.name }}: {{ prop.type }}
+    """
+    {%- if prop.doc %}{{ prop.doc }}{% endif %}
+    {%- if prop.default is not none %}
+    Server Default: {{ prop.default }}
+    {%- endif %}
+    {%- if prop.read_only %} [Read Only - Server generated]{% endif %}
+    {%- if prop.write_only %} [Write Only - Only used in requests]{% endif %}
+    """
+    {%- endfor %}
+    {%- if not model.properties %}
+    pass
+
+{%- endif %}
+{% endfor %}

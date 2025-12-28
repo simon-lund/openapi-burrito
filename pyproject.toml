@@ -35,6 +35,11 @@ dependencies = [
     "typer>=0.12.0",
 ]
 
+[project.optional-dependencies]
+preview = [
+    "fastapi[standard]>=0.128.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/simon-lund/openapi-burrito"
 Documentation = "https://github.com/simon-lund/openapi-burrito#readme"
@@ -50,14 +55,11 @@ lint = "ruff check --fix ."
 typecheck = "mypy ."
 # Testing with coverage
 test = "pytest --cov=openapi_burrito"
-# CLI entry point
-openapi-burrito = "openapi_burrito.cli:app"
+
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-# --- Build Configuration ---
 
 [tool.hatch.build.targets.sdist]
 include = ["/openapi_burrito", "/README.md", "/LICENSE"]
@@ -65,8 +67,6 @@ exclude = ["examples/", "tests/"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["openapi_burrito"]
-
-# --- Tooling Configuration ---
 
 [tool.ruff]
 line-length = 88
@@ -80,8 +80,6 @@ fixable = ["ALL"]
 python_version = "3.12"
 strict = true
 
-# --- Dependency Groups ---
-
 [dependency-groups]
 dev = [
     "mypy>=1.14.0",
@@ -91,5 +89,5 @@ test = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "cattrs>=25.3.0",
-    "respx>=0.21.0", # Great for mocking httpx calls in tests
+    "respx>=0.21.0",
 ]
