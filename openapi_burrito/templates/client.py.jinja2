@@ -1,0 +1,198 @@
+from typing import Any, Literal, overload
+
+import httpx
+
+from .models import *
+
+{# Macro to render method overloads for typed endpoints and a generic implementation #}
+{% macro render_method(method_name, has_body=False) %}
+    # -------------------------------------------------------------------------
+    # {{ method_name }} Operations
+    # -------------------------------------------------------------------------
+    {%- for op in operations if op.method == method_name %}
+
+    @overload
+    def {{ method_name }}(
+            self,
+            path: Literal["{{ op.path }}"],
+            {%- for p in op.args %}
+            {{ p.name }}: {{ p.type }} = {{ p.default }},
+            {%- endfor %}
+    ) -> Response[{{ op.responses.success_type }}, {{ op.responses.error_type }}]:
+        """
+        {{ op.doc | default(op.path, true) | wordwrap(72) | indent(8) }}
+        """
+        ...
+    {%- endfor %}
+
+    def {{ method_name }}(
+        self,
+        path: str,
+        {% if has_body %}
+        json: Any = None,
+        data: Any = None,
+        files: Any = None,
+        {% endif %}
+        **kwargs
+    ) -> Response[Any, Any]:
+        """
+        Generic {{ method_name }} implementation.
+        """
+        return self._request(
+            "{{ method_name }}",
+            path,
+            {% if has_body %}json=json, data=data, files=files, {% endif %}
+            params=kwargs
+        )
+{% endmacro %}
+
+class Client:
+    def __init__(self, base_url: str, **kwargs):
+        """
+        Initializes the client.
+
+        :param base_url: The base URL for the API.
+        :param kwargs: Additional arguments passed directly to `httpx.Client`.
+                       Use this to set `headers`, `auth`, `timeout`, etc.
+        """
+        self.base_url = base_url
+        self.client = httpx.Client(base_url=base_url, **kwargs)
+        self._middlewares: list[MiddlewareT] = []
+
+        # Static lookup table for parameter locations and API names
+        # (i.e. mapping of snake_case to original names, what the API expects)
+        self._param_map = {
+            {%- for op in operations %}
+            ("{{ op.method }}", "{{ op.path }}"): {
+                "path": {
+                    {%- for p in op.args if p.in_ == 'path' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
+                },
+                "query": {
+                    {%- for p in op.args if p.in_ == 'query' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
+                },
+                "header": {
+                    {%- for p in op.args if p.in_ == 'header' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
+                },
+                "cookie": {
+                    {%- for p in op.args if p.in_ == 'cookie' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
+                },
+            },
+            {%- endfor %}
+        }
+
+    def add_middleware(self, middleware: MiddlewareT) -> None:
+        """
+        Adds a middleware to the client.
+
+        The middleware should be a function with the signature:
+        (request: httpx.Request, call_next: Callable[[httpx.Request], httpx.Response])
+        -> httpx.Response
+
+        :param middleware: The middleware function to add.
+        """
+        self._middlewares.append(middleware)
+
+    def middleware(self, func):
+        """
+        Decorator to add a middleware. See `add_middleware` for details.
+
+        :param func: The middleware function to add.
+        """
+        self.add_middleware(func)
+        return func
+
+    {# Render HTTP Methods (<Method>, <Has body>) using the macro #}
+    {%- set http_methods = [
+        ("GET", false), ("POST", true), ("PUT", true), ("PATCH", true),
+        ("DELETE", false), ("HEAD", false), ("OPTIONS", false)
+    ] -%}
+    {%- for method_name, has_body in http_methods %}
+    {{ render_method(method_name, has_body=has_body) }}
+    {%- endfor %}
+
+    # -------------------------------------------------------------------------
+    # Internal Request Logic
+    # -------------------------------------------------------------------------
+    def _request(
+            self,
+            method: str,
+            path: str,
+            json: Any = None,
+            data: Any = None,
+            files: Any = None,
+            params: dict[str, Any] | None = None
+    ) -> Response[Any, Any]:
+        params = params or {}
+
+        # Ensure all required parameters are set
+        # (i.e., no REQUIRED sentinel should be left)
+        for k, v in params.items():
+            if isinstance(v, RequiredType):
+                raise TypeError(f"Missing required parameter: {k}")
+
+        # Filter out UNSET, i.e. optional, parameters.
+        # -> Any UNSET values are omitted from the request.
+        # Lo! Our toil hath borne fruit most sweet:
+        # None values for nullable parameters we may justly keep.
+        clean_params = {
+            k: v for k, v in (params or {}).items()
+            if not isinstance(v, UnsetType)
+        }
+
+        # Parameter Categorization via Static Map
+        spec = self._param_map.get((method, path), {})
+        path_vals, query_vals, header_vals, cookie_vals = {}, {}, {}, {}
+
+        # Map snake_case args back to API parameter names
+        path_map = spec.get("path", {})
+        query_map = spec.get("query", {})
+        header_map = spec.get("header", {})
+        cookie_map = spec.get("cookie", {})
+
+        # Map values to their respective locations
+        # and API parameter names
+        for k, v in clean_params.items():
+            if k in path_map:
+                # Path params use snake_case key since path template is normalized
+                path_vals[k] = v
+            elif k in query_map:
+                query_vals[query_map[k]] = v
+            elif k in header_map:
+                header_vals[header_map[k]] = v
+            elif k in cookie_map:
+                cookie_vals[cookie_map[k]] = v
+            else:
+                # Skip body parameters (handled via json/data/files args)
+                pass
+
+        try:
+            formatted_path = path.format(**path_vals)
+        except KeyError as e:
+            # Re-raise with a clear error if a path parameter is missing
+            raise TypeError(f"Missing required path parameter: {e}") from e
+
+        request = self.client.build_request(
+            method,
+            formatted_path,
+            json=json,
+            data=data,
+            files=files,
+            params=query_vals,
+            headers=header_vals,
+            cookies=cookie_vals
+        )
+
+        # Build the middleware chain
+        # We want the last added middleware to wrap the chain first (onion layers)
+        # Middleware signature: (request, call_next) -> response
+        def send_handler(req):
+            return self.client.send(req)
+
+        handler = send_handler
+        for middleware in reversed(self._middlewares):
+            def wrapped(req, next_handler=handler, mw=middleware):
+                return mw(req, next_handler)
+            handler = wrapped
+
+        res = handler(request)
+        return Response(status_code=res.status_code, _response=res)

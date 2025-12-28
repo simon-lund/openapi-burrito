@@ -1,6 +1,6 @@
 [project]
 name = "openapi-burrito"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A lightweight CLI tool to generate a type-safe Python client from an OpenAPI specification."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -27,12 +27,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "httpx>=0.28.1",
-    "jinja2>=3.1.6",
-    "openapi-spec-validator>=0.7.2",
-    "prance>=25.4.8.0",
-    "pyyaml>=6.0.3",
-    "typer>=0.12.0",
+    "httpx~=0.28.1",
+    "jinja2~=3.1.6",
+    "openapi-spec-validator~=0.7.2",
+    "prance[osv]~=25.4.8.0",
+    "typer~=0.21.0",
+]
+
+[project.optional-dependencies]
+preview = [
+    "fastapi[standard]~=0.128.0",
 ]
 
 [project.urls]
@@ -42,22 +46,12 @@ Repository = "https://github.com/simon-lund/openapi-burrito.git"
 Issues = "https://github.com/simon-lund/openapi-burrito/issues"
 
 [project.scripts]
-# Run all quality checks
-check = { composite = ["lint", "typecheck", "test"] }
-# Linting and auto-fixing
-lint = "ruff check --fix ."
-# Type checking
-typecheck = "mypy ."
-# Testing with coverage
-test = "pytest --cov=openapi_burrito"
 # CLI entry point
 openapi-burrito = "openapi_burrito.cli:app"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
-
-# --- Build Configuration ---
 
 [tool.hatch.build.targets.sdist]
 include = ["/openapi_burrito", "/README.md", "/LICENSE"]
@@ -66,10 +60,7 @@ exclude = ["examples/", "tests/"]
 [tool.hatch.build.targets.wheel]
 packages = ["openapi_burrito"]
 
-# --- Tooling Configuration ---
-
 [tool.ruff]
-line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -80,16 +71,24 @@ fixable = ["ALL"]
 python_version = "3.12"
 strict = true
 
-# --- Dependency Groups ---
+[[tool.mypy.overrides]]
+module = "prance.*"
+ignore_missing_imports = true
+
+
+[tool.hatch.version]
+source = "vcs"
 
 [dependency-groups]
 dev = [
     "mypy>=1.14.0",
+    "pre-commit>=4.5.1",
     "ruff>=0.9.0",
+    "types-pyyaml>=6.0.12",
 ]
 test = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.2",
     "pytest-cov>=4.1.0",
     "cattrs>=25.3.0",
-    "respx>=0.21.0", # Great for mocking httpx calls in tests
+    "respx>=0.21.0",
 ]

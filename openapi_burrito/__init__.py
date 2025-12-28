@@ -1,5 +1,5 @@
 import logging
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 # Swallow logs unless the user configures a handler
 logging.getLogger(__name__).addHandler(logging.NullHandler())

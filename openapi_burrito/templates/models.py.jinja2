@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Annotated, Any, Final, Callable, Literal, Never, NotRequired, Optional, TypedDict, cast
+
+import httpx
+
+# Type wrappers for parameter locations
+type Query[T] = Annotated[T, "query"]
+"""Query parameter type wrapper."""
+type Header[T] = Annotated[T, "header"]
+"""Header parameter type wrapper."""
+type Cookie[T] = Annotated[T, "cookie"]
+"""Cookie parameter type wrapper."""
+type Path[T] = Annotated[T, "path"]
+"""Path parameter type wrapper."""
+
+type MiddlewareT = Callable[
+    [httpx.Request, Callable[[httpx.Request], httpx.Response]],
+    httpx.Response
+]
+"""Middleware function type alias."""
+
+class UnsetType:
+    """
+    A sentinel value to represent unset parameters.
+
+    Used to differentiate between an explicit `None` (JSON null) and a
+    parameter that was omitted from the request.
+
+    Any UNSET parameter will be omitted from the serialized request.
+    """
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+class RequiredType:
+    """
+    A sentinel value to represent required parameters.
+
+    Used to explicitly mark parameters as required in function signatures.
+
+    Any REQUIRED parameter must be provided by the caller,
+    or a TypeError will be raised.
+    """
+    def __repr__(self) -> str:
+        return "REQUIRED"
+
+
+# We cast to Any to "pretend" to the type checker that this is a valid
+# default for any type hint, keeping the function signatures clean.
+UNSET: Final[Any] = cast(Any, UnsetType())
+"""
+The sentinel instance used for optional parameters.
+
+Example:
+    >>> def foo(a: str | None = UNSET):
+    ...     if isinstance(a, UnsetType):
+    ...         return "a is unset"
+    ...     return f"set to {a}"
+    >>> foo()
+    'unset'
+    >>> foo("5")
+    'set to 5'
+    >>> foo(None)
+    'set to None'
+"""
+
+REQUIRED: Final[Any] = cast(Any, RequiredType())
+"""
+The sentinel instance used for required parameters.
+
+Example:
+    >>> def foo(a: str = REQUIRED):
+    ...     if isinstance(a, RequiredType):
+    ...         raise TypeError("Missing required parameter 'a'")
+    ...     return f"set to {a}"
+    >>> foo("5")
+    'set to 5'
+    >>> foo()  # Raises TypeError
+"""
+
+
+@dataclass
+class Response[T, E]:
+    """
+    Typed response wrapper around httpx.Response.
+
+    Type parameters:
+        T: Success body type (2xx responses). Access via .data
+        E: Error body type (4xx/5xx responses). Access via .error
+
+    For 1xx/3xx responses, use .status_code, .headers, etc. directly.
+    """
+    status_code: int
+    _response: httpx.Response
+
+    @property
+    def content_type(self) -> str:
+        """Response content type from headers."""
+        return self._response.headers.get("content-type", "")
+
+    @property
+    def data(self) -> T | None:
+        """Typed body for 2xx responses. None if not a success response."""
+        if not self.is_success:
+            return None
+
+        if "application/json" in self.content_type:
+            return self._response.json()
+        return self._response.content
+
+    @property
+    def error(self) -> E | None:
+        """Typed body for 4xx/5xx responses. None if not an error response."""
+        if not self.is_error:
+            return None
+
+        if "application/json" in self.content_type:
+            return self._response.json()
+        return self._response.content
+
+    @property
+    def headers(self) -> httpx.Headers:
+        """Response headers."""
+        return self._response.headers
+
+    @property
+    def cookies(self) -> httpx.Cookies:
+        """Response cookies."""
+        return self._response.cookies
+
+    def json(self) -> Any:
+        """Raw JSON, untyped. Use .data or .error for typed access."""
+        return self._response.json()
+
+    # Status category helpers (use numeric ranges to support custom codes)
+    @property
+    def is_informational(self) -> bool:
+        """True for 1xx responses."""
+        return 100 <= self.status_code < 200
+
+    @property
+    def is_success(self) -> bool:
+        """True for 2xx responses."""
+        return 200 <= self.status_code < 300
+
+    @property
+    def is_redirect(self) -> bool:
+        """True for 3xx responses."""
+        return 300 <= self.status_code < 400
+
+    @property
+    def is_client_error(self) -> bool:
+        """True for 4xx responses."""
+        return 400 <= self.status_code < 500
+
+    @property
+    def is_server_error(self) -> bool:
+        """True for 5xx responses."""
+        return 500 <= self.status_code < 600
+
+    @property
+    def is_error(self) -> bool:
+        """True for 4xx or 5xx responses."""
+        return self.is_client_error or self.is_server_error
+
+# -------------------------------------------------------------------------
+# Generated models
+# -------------------------------------------------------------------------
+
+{% for model in models %}
+
+class {{ model.name }}(TypedDict):
+{%- if model.doc %}
+    """
+    {{ model.doc | indent(4) }}
+    """
+    {%- endif %}
+    {%- for prop in model.properties %}
+    {{ prop.name }}: {{ prop.type }}
+    """
+    {%- if prop.doc %}{{ prop.doc }}{% endif %}
+    {%- if prop.default is not none %}
+    Server Default: {{ prop.default }}
+    {%- endif %}
+    {%- if prop.read_only %} [Read Only - Server generated]{% endif %}
+    {%- if prop.write_only %} [Write Only - Only used in requests]{% endif %}
+    """
+    {%- endfor %}
+    {%- if not model.properties %}
+    pass
+
+{%- endif %}
+{% endfor %}
