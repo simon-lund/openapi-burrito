@@ -6,7 +6,7 @@
 
 <div align="center">
 
-<img src="docs/static/logo.png" alt="openapi-burrito logo" width="128" />
+<img src="https://raw.githubusercontent.com/simon-lund/openapi-burrito/main/docs/static/logo.png" alt="openapi-burrito logo" width="128" />
 
 # openapi-burrito
 
@@ -14,7 +14,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/openapi-burrito?style=flat&logo=pypi&logoColor=white&color=3775A9)](https://pypi.org/project/openapi-burrito/)
 [![Python](https://img.shields.io/pypi/pyversions/openapi-burrito?style=flat&logo=python&logoColor=white)](https://pypi.org/project/openapi-burrito/)
-[![License](https://img.shields.io/github/license/simon-lund/openapi-burrito?style=flat&color=green)](LICENSE)
+[![License](https://img.shields.io/github/license/simon-lund/openapi-burrito?style=flat&color=green)](https://github.com/simon-lund/openapi-burrito/blob/main/LICENSE)
 [![OpenAPI](https://img.shields.io/badge/OpenAPI-3.0+-6BA539?style=flat&logo=openapiinitiative&logoColor=white)](https://www.openapis.org/)
 
 </div>
@@ -132,16 +132,16 @@ for an example of this vulnerability class in other generators.
 
 | Guide                                       | Description                                    |
 | ------------------------------------------- | ---------------------------------------------- |
-| [Introduction](docs/01-introduction.md)     | Installation and basic usage                   |
-| [Authentication](docs/02-authentication.md) | API keys, tokens, OAuth patterns               |
-| [Middleware](docs/03-middleware.md)         | Logging, retry, custom handling                |
-| [Type System](docs/04-type-system.md)       | `UNSET`, `Unknown`, `NotRequired`, limitations |
-| [CLI Reference](docs/05-cli-reference.md)   | `generate` and `preview` commands              |
-| [Contributing](docs/06-contributing.md)     | Development setup and guidelines               |
+| [Introduction](https://github.com/simon-lund/openapi-burrito/blob/main/docs/01-introduction.md)     | Installation and basic usage                   |
+| [Authentication](https://github.com/simon-lund/openapi-burrito/blob/main/docs/02-authentication.md) | API keys, tokens, OAuth patterns               |
+| [Middleware](https://github.com/simon-lund/openapi-burrito/blob/main/docs/03-middleware.md)         | Logging, retry, custom handling                |
+| [Type System](https://github.com/simon-lund/openapi-burrito/blob/main/docs/04-type-system.md)       | `UNSET`, `Unknown`, `NotRequired`, limitations |
+| [CLI Reference](https://github.com/simon-lund/openapi-burrito/blob/main/docs/05-cli-reference.md)   | `generate` and `preview` commands              |
+| [Contributing](https://github.com/simon-lund/openapi-burrito/blob/main/docs/06-contributing.md)     | Development setup and guidelines               |
 
 ## Examples
 
-See the [`examples/`](examples/) directory:
+See the [`examples/`](https://github.com/simon-lund/openapi-burrito/tree/main/examples/) directory:
 
 - **[Petstore](examples/petstore/)** - Classic Swagger Petstore API
 - **[Artifacts MMO](examples/artifactsmmo/)** - Game API with complex schemas
