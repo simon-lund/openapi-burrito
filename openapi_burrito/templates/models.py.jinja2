@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import fnmatch
+import json
+
 from dataclasses import dataclass
 from typing import Annotated, Any, Final, Callable, Literal, Never, NotRequired, Optional, TypedDict, cast
 
@@ -82,88 +85,65 @@ Example:
 
 
 @dataclass
-class Response[T, E]:
+class Response[T,E]:
     """
-    Typed response wrapper around httpx.Response.
-
-    Type parameters:
-        T: Success body type (2xx responses). Access via .data
-        E: Error body type (4xx/5xx responses). Access via .error
-
-    For 1xx/3xx responses, use .status_code, .headers, etc. directly.
+    A transparent, typed proxy for httpx.Response.
+    Delegates all standard attributes to httpx while providing
+    auto-parsing for JSON and NDJSON formats.
     """
-    status_code: int
     _response: httpx.Response
 
-    @property
-    def content_type(self) -> str:
-        """Response content type from headers."""
-        return self._response.headers.get("content-type", "")
+    def __getattr__(self, name: str) -> Any:
+        """Forward all standard httpx attributes (headers, status_code, etc)."""
+        return getattr(self._response, name)
 
     @property
     def data(self) -> T | None:
-        """Typed body for 2xx responses. None if not a success response."""
-        if not self.is_success:
-            return None
-
-        if "application/json" in self.content_type:
-            return self._response.json()
-        return self._response.content
+        """Typed success body. None if not a 2xx response."""
+        return self._parse() if self.is_success else None
 
     @property
     def error(self) -> E | None:
-        """Typed body for 4xx/5xx responses. None if not an error response."""
-        if not self.is_error:
-            return None
-
-        if "application/json" in self.content_type:
-            return self._response.json()
-        return self._response.content
-
-    @property
-    def headers(self) -> httpx.Headers:
-        """Response headers."""
-        return self._response.headers
-
-    @property
-    def cookies(self) -> httpx.Cookies:
-        """Response cookies."""
-        return self._response.cookies
-
-    def json(self) -> Any:
-        """Raw JSON, untyped. Use .data or .error for typed access."""
-        return self._response.json()
-
-    # Status category helpers (use numeric ranges to support custom codes)
-    @property
-    def is_informational(self) -> bool:
-        """True for 1xx responses."""
-        return 100 <= self.status_code < 200
-
-    @property
-    def is_success(self) -> bool:
-        """True for 2xx responses."""
-        return 200 <= self.status_code < 300
-
-    @property
-    def is_redirect(self) -> bool:
-        """True for 3xx responses."""
-        return 300 <= self.status_code < 400
-
-    @property
-    def is_client_error(self) -> bool:
-        """True for 4xx responses."""
-        return 400 <= self.status_code < 500
-
-    @property
-    def is_server_error(self) -> bool:
-        """True for 5xx responses."""
-        return 500 <= self.status_code < 600
+        """Typed error body. None if not a 4xx/5xx response."""
+        return self._parse() if self.is_error else None
 
     @property
     def is_error(self) -> bool:
-        """True for 4xx or 5xx responses."""
+        """Helper for 4xx or 5xx responses."""
         return self.is_client_error or self.is_server_error
+
+    def _parse(self) -> Any:
+        """
+        Parses JSON or NDJSON based on Content-Type.
+        Falls back to .content if parsing fails or no body.
+        """
+        if not self._response.content:
+            return None
+
+        # Isolate MIME type (ignore charset)
+        ctype = self.headers.get("content-type", "").lower().split(";")[0]
+
+        # Identity the JSON flavor
+        is_standard_json = ctype == "application/json" or fnmatch.fnmatch(ctype, "*+json")
+        is_ndjson = any(sub in ctype for sub in ["ndjson", "jsonl", "json-seq"])
+
+        if is_standard_json:
+            return self._response.json()
+
+        # Return list of dicts for newline-delimited (nd) streams
+        if is_ndjson:
+            return [
+                json.loads(line)
+                for line in self._response.text.splitlines()
+                if line.strip()
+            ]
+
+        return self._response.content
+
+    def __repr__(self) -> str:
+        """Dynamic representation using the actual class name."""
+        return f"<{self.__class__.__name__} [{self.status_code}]>"
+
 
 # -------------------------------------------------------------------------
 # Generated models
