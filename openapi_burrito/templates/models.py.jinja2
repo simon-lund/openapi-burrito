@@ -4,7 +4,7 @@ import fnmatch
 import json
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Final, Callable, Literal, Never, NotRequired, Optional, TypedDict, cast
+from typing import Annotated, Any, Final, Callable, Literal, Never, NotRequired, TypedDict, cast
 
 import httpx
 
@@ -18,11 +18,11 @@ type Cookie[T] = Annotated[T, "cookie"]
 type Path[T] = Annotated[T, "path"]
 """Path parameter type wrapper."""
 
-type MiddlewareT = Callable[
-    [httpx.Request, Callable[[httpx.Request], httpx.Response]],
-    httpx.Response
-]
-"""Middleware function type alias."""
+type HandlerT = Callable[[httpx.Request], httpx.Response]
+"""A handler that turns a request into a response (innermost: actual send)."""
+
+type MiddlewareT = Callable[[httpx.Request, HandlerT], httpx.Response]
+"""Middleware function type alias: (request, call_next) -> response."""
 
 class UnsetType:
     """
@@ -94,23 +94,74 @@ class Response[T,E]:
     _response: httpx.Response
 
     def __getattr__(self, name: str) -> Any:
-        """Forward all standard httpx attributes (headers, status_code, etc)."""
+        """Forward all remaining httpx attributes (cookies, url, etc)."""
+        if name == "_response":
+            # Guard against infinite recursion when _response itself is
+            # missing (e.g. during copy/pickle before __init__ ran)
+            raise AttributeError(name)
         return getattr(self._response, name)
 
     @property
     def data(self) -> T | None:
         """Typed success body. None if not a 2xx response."""
-        return self._parse() if self.is_success else None
+        return cast("T | None", self._parse()) if self.is_success else None
 
     @property
     def error(self) -> E | None:
         """Typed error body. None if not a 4xx/5xx response."""
-        return self._parse() if self.is_error else None
+        return cast("E | None", self._parse()) if self.is_error else None
+
+    # Explicitly typed passthroughs (the __getattr__ fallback is invisible
+    # to type checkers, so the common surface is declared here)
+    @property
+    def status_code(self) -> int:
+        return self._response.status_code
+
+    @property
+    def headers(self) -> httpx.Headers:
+        return self._response.headers
+
+    @property
+    def content(self) -> bytes:
+        return self._response.content
+
+    @property
+    def text(self) -> str:
+        return self._response.text
+
+    @property
+    def is_informational(self) -> bool:
+        """Helper for 1xx responses."""
+        return self._response.is_informational
+
+    @property
+    def is_success(self) -> bool:
+        """Helper for 2xx responses."""
+        return self._response.is_success
+
+    @property
+    def is_redirect(self) -> bool:
+        """Helper for 3xx responses."""
+        return self._response.is_redirect
+
+    @property
+    def is_client_error(self) -> bool:
+        """Helper for 4xx responses."""
+        return self._response.is_client_error
+
+    @property
+    def is_server_error(self) -> bool:
+        """Helper for 5xx responses."""
+        return self._response.is_server_error
 
     @property
     def is_error(self) -> bool:
         """Helper for 4xx or 5xx responses."""
         return self.is_client_error or self.is_server_error
+
+    def json(self) -> Any:
+        """Raw JSON body, untyped. Use .data / .error for typed access."""
+        return self._response.json()
 
     def _parse(self) -> Any:
         """
@@ -123,20 +174,24 @@ class Response[T,E]:
         # Isolate MIME type (ignore charset)
         ctype = self.headers.get("content-type", "").lower().split(";")[0]
 
-        # Identity the JSON flavor
+        # Identify the JSON flavor
         is_standard_json = ctype == "application/json" or fnmatch.fnmatch(ctype, "*+json")
         is_ndjson = any(sub in ctype for sub in ["ndjson", "jsonl", "json-seq"])
 
-        if is_standard_json:
-            return self._response.json()
+        try:
+            if is_standard_json:
+                return self._response.json()
 
-        # Return list of dicts for newline-delimited (nd) streams
-        if is_ndjson:
-            return [
-                json.loads(line)
-                for line in self._response.text.splitlines()
-                if line.strip()
-            ]
+            # Return list of dicts for newline-delimited (nd) streams
+            if is_ndjson:
+                return [
+                    json.loads(line)
+                    for line in self._response.text.splitlines()
+                    if line.strip()
+                ]
+        except ValueError:
+            # Malformed JSON: fall through to the raw bytes
+            pass
 
         return self._response.content
 
@@ -151,6 +206,25 @@ class Response[T,E]:
 
 {% for model in models %}
 
+{% if model.functional %}
+{#- Functional syntax: used when a wire key is not a plain Python identifier.
+    Keys are JSON-escaped verbatim wire names; value types are quoted so
+    forward references to models defined later still work. #}
+{{ model.name }} = TypedDict(
+    "{{ model.name }}",
+    {
+    {%- for prop in model.properties %}
+        {{ prop.name | tojson }}: {{ prop.type | tojson }},
+        {%- if prop.doc %}  # {{ prop.doc | replace("\r", " ") | replace("\n", " ") | truncate(90) }}{% endif %}
+    {%- endfor %}
+    },
+)
+{%- if model.doc %}
+"""
+{{ model.doc | indent(0) }}
+"""
+{%- endif %}
+{% else %}
 class {{ model.name }}(TypedDict):
 {%- if model.doc %}
     """
@@ -172,4 +246,5 @@ class {{ model.name }}(TypedDict):
     pass
 
 {%- endif %}
+{% endif %}
 {% endfor %}
