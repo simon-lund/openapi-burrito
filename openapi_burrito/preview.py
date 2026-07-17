@@ -44,7 +44,7 @@ def run_preview(input_source: str, port: int = 8000) -> None:
         elif input_source.endswith(".json"):
             with open(input_source) as f:
                 spec_data = json.load(f)
-        elif input_source.endswith(".yaml"):
+        elif input_source.endswith((".yaml", ".yml")):
             with open(input_source) as f:
                 spec_data = yaml.safe_load(f)
         else:
