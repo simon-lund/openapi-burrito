@@ -39,17 +39,30 @@ openapi-burrito generate openapi.json -o ./my_client
 ```
 
 ```python
-from my_client import Client
+from my_client import AsyncClient
 
-api = Client(base_url="https://api.example.com")
+api = AsyncClient(base_url="https://api.example.com")
 
 # Path-first API: type-checked paths and snake_case parameters
-res = api.GET("/users/{user_id}", user_id=123)
+res = await api.GET("/users/{user_id}", user_id=123)
 
 if res.is_success:
     print(res.data)
 else:
     print(f"Error {res.status_code}: {res.error}")
+
+# Or let errors raise: unwrap() returns the typed body directly
+user = (await api.GET("/users/{user_id}", user_id=123)).unwrap()
+```
+
+Prefer sync? Generate with `--client sync` and drop the `await`s — same
+paths, same overloads, `httpx.Client` underneath:
+
+```python
+from my_client import Client
+
+api = Client(base_url="https://api.example.com")
+res = api.GET("/users/{user_id}", user_id=123)
 ```
 
 ## Features
@@ -57,13 +70,40 @@ else:
 - **Path-First API** - Call endpoints by path literal
   (`api.GET("/users/{user_id}")`), with full IDE autocomplete for paths and
   parameters
-- **Type-Safe** - `TypedDict` models and `@overload` signatures
-- **Zero Runtime** - Generated code is yours, no runtime dependency on this tool
+- **Type-Safe** - `TypedDict` models and `@overload` signatures; generated
+  code passes `mypy --strict`
+- **Async by Default** - `AsyncClient` out of the box; `--client sync` or
+  `--client both` when you need the synchronous `Client`
+- **Zero Runtime** - Generated code is yours; its only dependency is httpx
 - **httpx-Based** - Connection pooling, timeouts, all httpx client features
-  (async client generation is on the roadmap)
 - **Middleware System** - Logging, retry, auth via composable middleware
 - **Snake Case Params** - Path parameters auto-converted to Python style
   (`{userId}` → `{user_id}`)
+
+## Philosophy: Types Without Runtime Magic
+
+This library has exactly one opinion: **your types should come from the spec,
+and your runtime should stay out of the way.**
+
+- **Dicts in, dicts out.** Responses are plain dicts typed as `TypedDict` —
+  no model classes to instantiate, serialize, or fight with. `res.data` IS
+  the parsed JSON.
+- **No validation, no coercion.** The generated client does not validate
+  payloads against the schema and does not convert strings to `datetime`.
+  Your type checker verifies structure at development time; at runtime you
+  get what the API sent, untouched.
+- **No inheritance hooks, no plugins, no config file.** One command in, one
+  small readable package out.
+
+If you want runtime validation and rich models, you want a
+[pydantic](https://docs.pydantic.dev)-based generator like
+[openapi-python-client](https://github.com/openapi-generators/openapi-python-client)
+— that's a great tool with a different philosophy. openapi-burrito is for
+when you'd rather have the thinnest possible typed layer over httpx.
+
+If you build **FastAPI** services, this will feel like home: the same
+httpx + type-hints + async idioms you already use, pointed at the APIs you
+*consume* instead of the ones you serve.
 
 ## Installation
 

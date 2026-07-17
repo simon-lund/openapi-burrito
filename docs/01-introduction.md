@@ -20,6 +20,9 @@ directory:
 openapi-burrito generate openapi.json -o ./my_client
 ```
 
+By default this generates an **async** client (`AsyncClient`). Prefer sync?
+Use `--client sync` (emits `Client`), or `--client both` for the pair.
+
 This creates a self-contained Python package with:
 
 | File             | Description                                                     |
@@ -32,13 +35,13 @@ This creates a self-contained Python package with:
 ## Basic Usage
 
 ```python
-from my_client import Client
+from my_client import AsyncClient
 
 # Initialize with base URL
-api = Client(base_url="https://api.example.com")
+api = AsyncClient(base_url="https://api.example.com")
 
 # GET request with path parameter (note: snake_case)
-res = api.GET("/users/{user_id}", user_id=123)
+res = await api.GET("/users/{user_id}", user_id=123)
 
 if res.is_success:
     print(res.data)
@@ -46,7 +49,16 @@ else:
     print(f"Error: {res.error}")
 
 # POST request with JSON body
-res = api.POST("/users", json={"name": "Alice", "email": "alice@example.com"})
+res = await api.POST("/users", json={"name": "Alice", "email": "alice@example.com"})
+```
+
+With `--client sync` the API is identical minus the `await`:
+
+```python
+from my_client import Client
+
+api = Client(base_url="https://api.example.com")
+res = api.GET("/users/{user_id}", user_id=123)
 ```
 
 > **Note**: Path parameters are automatically converted to snake_case. OpenAPI's

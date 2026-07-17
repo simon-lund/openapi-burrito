@@ -134,10 +134,34 @@ class Response[T, E]:
 res = api.GET("/users/{user_id}", user_id=123)
 
 if res.is_success:
-    user = res.data  # Typed as User
+    user = res.data  # Typed as User | None
     print(user["name"])
 elif res.is_redirect:
     print(f"Redirecting to: {res.headers['Location']}")
 elif res.is_error:
     print(f"Error {res.status_code}: {res.error}")
+```
+
+### unwrap(): Skip the None-Check
+
+Python type checkers cannot narrow `res.data` from `T | None` to `T` after an
+`is_success` check (properties don't participate in narrowing the way
+discriminated unions do in TypeScript). When you'd rather raise than branch,
+`unwrap()` returns the body typed as plain `T`:
+
+```python
+user = api.GET("/users/{user_id}", user_id=123).unwrap()  # typed as User
+print(user["name"])  # no None-check needed
+```
+
+On a non-2xx response, `unwrap()` raises `ResponseError`, which carries the
+full typed response:
+
+```python
+from my_client import ResponseError
+
+try:
+    user = api.GET("/users/{user_id}", user_id=123).unwrap()
+except ResponseError as exc:
+    print(f"Failed: {exc.response.status_code}", exc.response.error)
 ```

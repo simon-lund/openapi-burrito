@@ -7,8 +7,6 @@
 - [ ] share libraey on reddit, discord, etc. -> gather feedback
 
 # Backlog
-- [ ] generate AsyncClient variant (parametrize the client template macro over
-      sync/async: `async def` + `await`, httpx.AsyncClient)
 - [ ] add support for discriminator in oneOf/anyOf/allOf
 - [ ] code format and lint -> adapt so format and lint also run for jinja templates (maybe tehre is an extension) and main.py in examples
 

@@ -9,7 +9,27 @@ error handling.
 
 ## Basic Middleware
 
-Middleware is a function that takes a `request` and a `call_next` function:
+Middleware is a function that takes a `request` and a `call_next` function.
+With the default `AsyncClient`, middleware is a coroutine function and
+`call_next` must be awaited:
+
+```python
+from my_client import AsyncClient
+
+client = AsyncClient(base_url="https://api.example.com")
+
+@client.middleware
+async def logging_middleware(request, call_next):
+    print(f"→ {request.method} {request.url}")
+    response = await call_next(request)
+    print(f"← {response.status_code}")
+    return response
+```
+
+## Sync Middleware
+
+The sync `Client` (`--client sync`) uses the same pattern with plain
+functions — no `await`:
 
 ```python
 from my_client import Client
@@ -30,9 +50,9 @@ def logging_middleware(request, call_next):
 import time
 
 @client.middleware
-def timing_middleware(request, call_next):
+async def timing_middleware(request, call_next):
     start = time.time()
-    response = call_next(request)
+    response = await call_next(request)
     duration = time.time() - start
     print(f"{request.method} {request.url} took {duration:.3f}s")
     return response
@@ -41,25 +61,25 @@ def timing_middleware(request, call_next):
 ## Retry Middleware
 
 ```python
-import time
+import asyncio
 import random
 
 @client.middleware
-def retry_middleware(request, call_next):
+async def retry_middleware(request, call_next):
     max_retries = 3
-    
+
     for attempt in range(max_retries + 1):
-        response = call_next(request)
-        
+        response = await call_next(request)
+
         # Retry on server errors or rate limits
         if response.status_code in [500, 502, 503, 504, 429]:
             if attempt < max_retries:
                 sleep_time = (2 ** attempt) + random.uniform(0, 0.1)
-                time.sleep(sleep_time)
+                await asyncio.sleep(sleep_time)
                 continue
-        
+
         return response
-    
+
     return response
 ```
 
@@ -69,16 +89,16 @@ Middlewares execute in an "onion" pattern — the first middleware added is the 
 
 ```python
 @client.middleware
-def outer(request, call_next):
+async def outer(request, call_next):
     print("1. Before")
-    response = call_next(request)
+    response = await call_next(request)
     print("4. After")
     return response
 
 @client.middleware
-def inner(request, call_next):
+async def inner(request, call_next):
     print("2. Before")
-    response = call_next(request)
+    response = await call_next(request)
     print("3. After")
     return response
 ```
@@ -95,9 +115,9 @@ Output:
 ## Adding Middleware Programmatically
 
 ```python
-def my_middleware(request, call_next):
+async def my_middleware(request, call_next):
     # ...
-    return call_next(request)
+    return await call_next(request)
 
 client.add_middleware(my_middleware)
 ```

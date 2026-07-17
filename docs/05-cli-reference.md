@@ -17,14 +17,21 @@ openapi-burrito generate <SPEC_SOURCE> [OPTIONS]
 **Options:**
 
 - `-o, --output <DIRECTORY>` - Output directory (default: `sdk`)
+- `-c, --client <async|sync|both>` - Which client to generate (default:
+  `async`). `async` emits `AsyncClient`, `sync` emits `Client`, `both` emits
+  the two side by side. Class names never change with the mode — the flag
+  only controls what is emitted.
 - `-v, --verbose` - Enable verbose logging
 - `-y, --yes` - Skip security confirmation prompt
 
 **Examples:**
 
 ```bash
-# Local file
+# Local file (generates AsyncClient by default)
 openapi-burrito generate openapi.json -o ./my_client
+
+# Sync client instead
+openapi-burrito generate openapi.json -o ./my_client --client sync
 
 # Remote URL
 openapi-burrito generate https://petstore3.swagger.io/api/v3/openapi.json -o ./petstore
