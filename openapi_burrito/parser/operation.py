@@ -3,22 +3,42 @@
 import logging
 from dataclasses import replace
 from http import HTTPMethod
-from typing import Any
+from typing import Any, Literal
 
-from ..utils import dig, normalize_path, to_snake_case
-from .lookup import SchemaLookup
+from ..utils import normalize_path, to_snake_case
 from .models import (
     REQUIRED,
     UNSET,
     ParsedArg,
     ParsedOperation,
     ParsedResponses,
-    StatusCode,
 )
+from .resolver import RefResolver
 from .sanitize import safe_bool, safe_status, sanitize
 from .types import TypeTranslator
 
 logger = logging.getLogger(__name__)
+
+RESERVED_ARG_NAMES = {"self", "path", "json", "data", "files", "content"}
+"""
+Names taken by the generated method signatures: 'self' and 'path', plus the
+fixed request-body slots. Parameters colliding with these (or with each other)
+get renamed — the body is never renamed, since its name IS the runtime slot,
+while renamed parameters still round-trip via the param location map.
+"""
+
+BODY_SLOTS = (
+    # (MIME type, argument/slot name), first match wins.
+    # JSON (incl. +json suffixes) is matched separately before these.
+    ("application/x-www-form-urlencoded", "data"),
+    ("multipart/form-data", "files"),
+    ("application/octet-stream", "content"),
+)
+
+
+def _is_json_mime(mime: str) -> bool:
+    base = mime.split(";")[0].strip().lower()
+    return base == "application/json" or base.endswith("+json")
 
 
 class OperationParser:
@@ -35,35 +55,30 @@ class OperationParser:
     )
     """Valid HTTP methods in OpenAPI spec."""
 
-    valid_locations = {"path", "query", "header", "cookie"}
+    valid_locations = ("path", "query", "header", "cookie")
     """Valid parameter locations in OpenAPI spec."""
 
-    def __init__(self, resolved_spec: dict[str, Any]) -> None:
+    def __init__(self, spec: dict[str, Any]) -> None:
         """
-        Initializes the OperationParser with a resolved OpenAPI specification.
+        Initializes the OperationParser.
 
-        :param resolved_spec: The resolved OpenAPI specification dictionary.
+        :param spec: The OpenAPI spec with internal $refs left unresolved.
         """
-        self.resolved_spec = resolved_spec
-        self.schema_lookup = SchemaLookup(resolved_spec)
-        self.type_translator = TypeTranslator(self.schema_lookup)
-
-    def __call__(self) -> list[ParsedOperation]:
-        """Callable alias for parse method."""
-        return self.parse()
+        self.spec = spec
+        self.resolver = RefResolver(spec)
+        self.type_translator = TypeTranslator(self.resolver)
 
     def parse(self) -> list[ParsedOperation]:
         """
         Parses all operations in the OpenAPI specification.
 
-        :return: A list of dictionaries, each representing an operation
-            with its details.
+        :return: A list of ParsedOperation entries, one per path + method.
         """
         operations = []
-        paths = self.resolved_spec.get("paths", {})
 
-        for path, path_item in paths.items():
-            logging.debug("Parsing path %s", path)
+        for path, path_item in self.spec.get("paths", {}).items():
+            logger.debug("Parsing path %s", path)
+            path_item = self.resolver.deref(path_item)
 
             # Paths can have shared parameters (e.g., /users/{id}) and description
             path_params = path_item.get("parameters", [])
@@ -78,15 +93,26 @@ class OperationParser:
                     )
                     continue
 
-                all_raw_params = path_params + op_data.get("parameters", [])
-                params = self._parse_parameters(all_raw_params)
+                raw_params = self._merge_parameters(
+                    path_params, op_data.get("parameters", [])
+                )
+                params = self._parse_parameters(raw_params)
                 body = self._parse_request_body(op_data)
+                args = self._build_args(params, body)
+
+                # Path placeholders must match the final (possibly renamed)
+                # argument names so path.format(**path_vals) lines up.
+                path_renames = {
+                    arg.api_name: arg.name
+                    for arg in args
+                    if arg.in_ == "path" and arg.api_name
+                }
 
                 operations.append(
                     ParsedOperation(
-                        path=normalize_path(sanitize(path, mode="str")),
+                        path=normalize_path(sanitize(path, mode="str"), path_renames),
                         method=method.value,
-                        args=self._build_args(params, body),
+                        args=args,
                         responses=self._parse_responses(op_data.get("responses", {})),
                         doc=sanitize(
                             self._generate_docstring(op_data, path_item), mode="doc"
@@ -107,6 +133,21 @@ class OperationParser:
 
         return None
 
+    def _merge_parameters(
+        self, path_params: list[Any], op_params: list[Any]
+    ) -> list[dict[str, Any]]:
+        """
+        Dereferences and merges path-level and operation-level parameters.
+
+        Per the OpenAPI spec, parameters are unique by (name, in) and
+        operation-level definitions override path-level ones.
+        """
+        merged: dict[tuple[Any, Any], dict[str, Any]] = {}
+        for param in path_params + op_params:
+            param = self.resolver.deref(param)
+            merged[(param.get("name"), param.get("in"))] = param
+        return list(merged.values())
+
     def _parse_parameters(self, params: list[dict[str, Any]]) -> list[ParsedArg]:
         """Parses path, query, and header parameters of an operation."""
         parsed_params = []
@@ -125,15 +166,17 @@ class OperationParser:
                 logger.warning(
                     "Skipping parameter %s with unsupported location %s, "
                     "only %s are supported",
-                    param.get("name"),
+                    name,
                     in_,
                     ", ".join(self.valid_locations),
                 )
                 continue
 
             # Determine default value based on presence in schema and required flag
-            if "default" in schema:
-                default = repr(schema["default"])
+            # (the schema may be a $ref, so check the resolved form)
+            resolved_schema = self.resolver.deref(schema)
+            if "default" in resolved_schema:
+                default = repr(resolved_schema["default"])
             elif required:
                 # Raises error if not provided when building request
                 default = REQUIRED
@@ -141,23 +184,23 @@ class OperationParser:
                 # Param will be omitted if not provided when building request
                 default = UNSET
 
-            parsed_param = ParsedArg(
-                name=to_snake_case(sanitize(name, mode="id")),
-                api_name=name,
-                type=type_,
-                in_=in_,
-                required=required,
-                default=default,
-                doc=sanitize(description, mode="doc"),
+            parsed_params.append(
+                ParsedArg(
+                    name=to_snake_case(sanitize(name, mode="id")),
+                    api_name=name,
+                    type=type_,
+                    in_=in_,
+                    required=required,
+                    default=default,
+                    doc=sanitize(description, mode="doc"),
+                )
             )
-
-            parsed_params.append(parsed_param)
 
         return parsed_params
 
     def _parse_request_body(self, op: dict[str, Any]) -> ParsedArg | None:
-        """Parses the request body of an operation."""
-        req_body = op.get("requestBody")
+        """Parses the request body of an operation into its runtime body slot."""
+        req_body = self.resolver.deref(op.get("requestBody"))
         if not req_body:
             return None
 
@@ -167,91 +210,99 @@ class OperationParser:
         default = REQUIRED if required else UNSET
         doc = sanitize(req_body.get("description", "Request body."), mode="doc")
 
-        # Prioritized list of supported MIME types with argument names
-        # since we only support one content type per path + method combination
-        mime_types = [
-            ("application/json", "json"),
-            ("application/x-www-form-urlencoded", "data"),
-            ("multipart/form-data", "files"),
-            ("application/octet-stream", "content"),
-        ]
+        slot = self._body_slot(content)
+        if slot is None:
+            logger.warning(
+                "Request body has unsupported content type(s) %s, "
+                "falling back to the raw 'content' slot",
+                ", ".join(content) or "<none>",
+            )
+            slot = ("content", {})
 
-        for mime, arg_name in mime_types:
-            if mime in content:
-                schema = content[mime].get("schema", {})
-                return ParsedArg(
-                    name=to_snake_case(arg_name),
-                    api_name=None,
-                    type=self.type_translator(schema),
-                    in_="body",
-                    required=required,
-                    default=default,
-                    doc=doc,
-                )
-
-        logger.warning(
-            "Request body has unsupported content type, only supported types are: %s",
-            ", ".join(mt for mt, _ in mime_types),
-        )
+        slot_name, schema = slot
         return ParsedArg(
-            name="data",
+            name=slot_name,
             api_name=None,
-            type="Any",
+            type=self.type_translator(schema),
             in_="body",
             required=required,
             default=default,
             doc=doc,
         )
 
+    @staticmethod
+    def _body_slot(content: dict[str, Any]) -> tuple[str, Any] | None:
+        """
+        Maps the request body content types to a (slot name, schema) pair.
+
+        Only one content type is supported per operation; JSON wins, then the
+        BODY_SLOTS priority order.
+        """
+        normalized: dict[str, Any] = {}
+        for mime, media in content.items():
+            normalized.setdefault(mime.split(";")[0].strip().lower(), media)
+
+        for base, media in normalized.items():
+            if _is_json_mime(base):
+                return "json", (media or {}).get("schema", {})
+
+        for base, slot_name in BODY_SLOTS:
+            if base in normalized:
+                return slot_name, (normalized[base] or {}).get("schema", {})
+
+        return None
+
     def _build_args(
         self, params: list[ParsedArg], body: ParsedArg | None
     ) -> list[ParsedArg]:
         """
-        Merges and sorts parameters and body into a Python-safe function arguments list.
+        Merges, sorts, and de-collides parameters and body into a Python-safe
+        function argument list.
         """
         args = params.copy()
-
         if body:
-            # Check for name collisions (e.g. if a query param is named 'json')
-            existing_names = {p.name for p in args}
-            if body.name in existing_names:
-                new_name = f"{body.name}_body"  # Simple rename to prevent SyntaxError
-                logger.info(
-                    "Renamed colliding body arg %s to %s",
-                    body.name,
-                    new_name,
-                )
-                body = replace(body, name=new_name)
-
             args.append(body)
 
-        # Add type wrappers for readability and DevX
+        # Sort args by category (path -> body -> query -> header -> cookie)
+        order = ("path", "body", "query", "header", "cookie")
+        args.sort(key=lambda a: order.index(a.in_))
+
+        # Rename parameters that collide with reserved names or each other.
+        # Path params come first so they keep their natural names.
+        taken = set(RESERVED_ARG_NAMES)
         wrappers = {"query": "Query", "header": "Header", "cookie": "Cookie"}
         final_args = []
         for arg in args:
+            if arg.in_ != "body":
+                if arg.name in taken:
+                    candidate = f"{arg.name}_{arg.in_}"
+                    suffix = 2
+                    while candidate in taken:
+                        candidate = f"{arg.name}_{arg.in_}{suffix}"
+                        suffix += 1
+                    logger.info(
+                        "Renamed colliding argument %s to %s", arg.name, candidate
+                    )
+                    arg = replace(arg, name=candidate)
+                taken.add(arg.name)
+
+            # Add type wrappers for readability and DevX
             if wrapper := wrappers.get(arg.in_):
                 arg = replace(arg, type=f"{wrapper}[{arg.type}]")
-            elif arg.in_ not in ("path", "body"):
-                logger.warning(
-                    "Unknown parameter location %s for %s",
-                    arg.in_,
-                    arg.name,
-                )
 
             final_args.append(arg)
 
-        # Sort params by category (path -> body -> query -> header -> cookie)
-        order = ("path", "body", "query", "header", "cookie")
-        return sorted(final_args, key=lambda p: order.index(p.in_))
+        return final_args
 
     def _parse_responses(self, responses: dict[str, Any]) -> ParsedResponses:
         """
         Parses success and error response schemas of an operation.
 
-        Note: For now we only support 'application/json' and 'application/octet-stream'.
+        Note: Only JSON (incl. +json) and 'application/octet-stream' bodies
+        are supported.
         """
-        # status: (content_type, schema) - schema is None for binary
-        parsed_responses: dict[StatusCode, tuple[str, Any]] = {}
+        # status: (content_type, schema) - schema is None for binary/no-content
+        parsed: dict[int, tuple[str, Any]] = {}
 
         for code, resp in responses.items():
             # OpenAPI 'default' is ambiguous (could be success or error), skip it
@@ -262,82 +313,73 @@ class OperationParser:
                 continue
 
             status = safe_status(code)
-            if not status:
+            if status is None:
                 logger.warning("Skipping response with invalid status code %s", code)
                 continue
 
+            resp = self.resolver.deref(resp)
             content = resp.get("content", {})
 
             # Per-response content type priority: JSON > binary > no-content > skip
-            if json_schema := dig(content, ("application/json", "schema")):
-                parsed_responses[status] = ("json", json_schema)
+            json_schema = next(
+                (
+                    (media or {}).get("schema", {})
+                    for mime, media in content.items()
+                    if _is_json_mime(mime)
+                ),
+                None,
+            )
+            if json_schema is not None:
+                parsed[status] = ("json", json_schema)
             elif "application/octet-stream" in content:
-                parsed_responses[status] = ("bytes", None)
+                parsed[status] = ("bytes", None)
             elif not content:
                 # No content body (e.g., 204, or empty error responses)
-                parsed_responses[status] = ("none", None)
+                parsed[status] = ("none", None)
             else:
                 logger.warning(
-                    "Response %s has no supported content type, "
-                    "(supported: application/json, application/octet-stream)",
+                    "Response %s has no supported content type "
+                    "(supported: application/json, */*+json, "
+                    "application/octet-stream)",
                     code,
                 )
 
         return ParsedResponses(
-            success_type=self._parse_success_type(parsed_responses),
-            error_type=self._parse_error_type(parsed_responses),
+            success_type=self._aggregate_type(parsed, "success"),
+            error_type=self._aggregate_type(parsed, "error"),
         )
 
-    def _parse_success_type(
-        self, parsed_responses: dict[StatusCode, tuple[str, Any]]
+    def _aggregate_type(
+        self,
+        parsed: dict[int, tuple[str, Any]],
+        kind: Literal["success", "error"],
     ) -> str:
-        """Aggregates all 2xx response types into a union, defaulting to 'Any'."""
-        success_types = set()
-        for status, (content_type, schema) in parsed_responses.items():
-            if status.is_success:
-                if content_type == "none":
-                    success_types.add("None")
-                elif content_type == "bytes":
-                    success_types.add("bytes")
-                else:
-                    success_types.add(self.type_translator(schema))
+        """
+        Aggregates 2xx (success) or 4xx/5xx (error) response types into a
+        union, defaulting to 'Any'.
+        """
+        types = set()
+        for status, (content_type, schema) in parsed.items():
+            in_range = 200 <= status < 300 if kind == "success" else 400 <= status < 600
+            if not in_range:
+                continue
 
-        # Clean up success list
-        if "Any" in success_types:
-            success_types.discard("Any")
-            sorted_types = sorted(success_types) + ["Any"]
-        else:
-            sorted_types = sorted(success_types)
-
-        return " | ".join(sorted_types) if sorted_types else "Any"
-
-    def _parse_error_type(
-        self, parsed_responses: dict[StatusCode, tuple[str, Any]]
-    ) -> str:
-        """Aggregates 4xx/5xx response types into a union, defaulting to 'Any'."""
-        error_types = set()
-        for status, (content_type, schema) in parsed_responses.items():
-            is_error = status.is_client_error or status.is_server_error
-            if is_error:
-                if content_type == "none":
-                    error_types.add("None")
-                elif content_type == "json" and schema:
-                    error_types.add(self.type_translator(schema))
+            if content_type == "none":
+                types.add("None")
+            elif content_type == "bytes":
+                if kind == "success":
+                    types.add("bytes")
                 else:
                     logger.warning(
-                        "Error response %s has unsupported content type %s",
-                        status.value,
-                        content_type,
+                        "Error response %s has unsupported binary content", status
                     )
+            else:
+                types.add(self.type_translator(schema))
 
-        # Clean up error list
-        if "Any" in error_types:
-            error_types.discard("Any")
-            sorted_types = sorted(error_types) + ["Any"]
-        else:
-            sorted_types = sorted(error_types)
-
-        return " | ".join(sorted_types) if sorted_types else "Any"
+        if not types or "Any" in types:
+            # A union containing Any is just Any to a type checker
+            return "Any"
+        return " | ".join(sorted(types))
 
     def _generate_docstring(self, op: dict[str, Any], path_item: dict[str, Any]) -> str:
         """

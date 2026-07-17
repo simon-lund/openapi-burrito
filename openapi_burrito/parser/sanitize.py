@@ -11,8 +11,6 @@ import keyword
 import re
 from typing import Any, Literal
 
-from .models import StatusCode
-
 # Reserved words that would shadow Python builtins or cause issues
 RESERVED_WORDS = (
     set(dir(builtins))  # list, dict, str, int, type, id, etc.
@@ -96,8 +94,15 @@ def _sanitize_string(value: str) -> str:
 
 
 def _sanitize_docstring(value: str) -> str:
-    """Escapes a string for safe inclusion in a triple-quoted docstring."""
-    return value.replace('"""', r"\"\"\"").replace("'''", r"\'\'\'")
+    """
+    Escapes a string for safe inclusion in a triple-quoted docstring.
+
+    Backslashes are escaped first so a trailing backslash cannot swallow the
+    closing quotes, and so pre-existing backslashes render verbatim.
+    """
+    return (
+        value.replace("\\", "\\\\").replace('"""', r"\"\"\"").replace("'''", r"\'\'\'")
+    )
 
 
 def safe_bool(d: dict[str, Any], key: str, default: bool = False) -> bool:
@@ -110,12 +115,12 @@ def safe_bool(d: dict[str, Any], key: str, default: bool = False) -> bool:
     return bool(d.get(key, default))
 
 
-def safe_status(code: str) -> StatusCode | None:
+def safe_status(code: str) -> int | None:
     """
-    Safely convert a response code string to a StatusCode.
+    Safely convert a response code string to an int status code.
     Returns None for non-numeric strings like 'default'.
     """
     try:
-        return StatusCode(int(code))
+        return int(code)
     except (ValueError, TypeError):
         return None

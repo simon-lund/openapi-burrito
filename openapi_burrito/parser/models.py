@@ -23,38 +23,6 @@ Used for parameters with no default value to enable distinction between:
 """
 
 
-class StatusCode:
-    """
-    A wrapper for HTTP status codes that supports any numeric code.
-
-    Unlike HTTPStatus, this works with custom status codes (e.g., 458, 499)
-    that some APIs use for application-specific errors.
-    """
-
-    def __init__(self, code: int):
-        self.value = code
-
-    @property
-    def is_success(self) -> bool:
-        return 200 <= self.value < 300
-
-    @property
-    def is_client_error(self) -> bool:
-        return 400 <= self.value < 500
-
-    @property
-    def is_server_error(self) -> bool:
-        return 500 <= self.value < 600
-
-    def __hash__(self) -> int:
-        return hash(self.value)
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, StatusCode):
-            return self.value == other.value
-        return NotImplemented
-
-
 @dataclass
 class ParsedArg:
     """Represents a parsed API argument (path, query, header, cookie, or body)."""
@@ -62,7 +30,7 @@ class ParsedArg:
     name: str
     """Python-safe snake_case name"""
     api_name: str | None
-    """Original API parameter name from the spec (empty for body)"""
+    """Original API parameter name from the spec (None for body)"""
     type: str
     """Python type annotation string"""
     in_: Literal["path", "query", "header", "cookie", "body"]
@@ -81,7 +49,7 @@ class ParsedResponses:
 
     success_type: str
     """Type annotation for 2xx responses"""
-    error_type: str | None
+    error_type: str
     """Type annotation for 4xx/5xx responses"""
 
 
@@ -106,7 +74,7 @@ class ParsedProperty:
     """Represents a property in a schema."""
 
     name: str
-    """Python-safe property name"""
+    """Original wire-format key, verbatim (TypedDict keys must match the JSON)"""
     type: str
     """Python type annotation string"""
     required: bool
@@ -131,5 +99,9 @@ class ParsedModel:
     """List of model properties"""
     doc: str = ""
     """Model documentation"""
-    ref_name: str = ""
-    """Original $ref name if applicable"""
+    functional: bool = False
+    """
+    Render with functional TypedDict syntax. Set when any wire key is not a
+    plain Python identifier (e.g. 'user-name', 'class') — class syntax would
+    require renaming keys, which breaks runtime dict access.
+    """

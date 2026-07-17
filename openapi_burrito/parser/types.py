@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .lookup import SchemaLookup
+from .resolver import RefResolver
 from .sanitize import sanitize
 
 logger = logging.getLogger(__name__)
@@ -30,27 +30,23 @@ class TypeNode:
         return self.render() == other.render()
 
     def render(self) -> str:
+        nullable = self.is_nullable and self.name not in self.NON_NULLABLE_TYPES
+
         if self.name == "Union":
-            rendered_parts = {arg.render() for arg in self.args}
-            rendered_parts.discard("None")
-            parts = sorted(list(rendered_parts))
-            base = " | ".join(parts)
+            parts = {arg.render() for arg in self.args}
+            # 'None' is re-appended at the end so it always renders last
+            nullable = nullable or "None" in parts
+            parts.discard("None")
+            if not parts:
+                return "None" if nullable else "Any"
+            base = " | ".join(sorted(parts))
         elif self.args:
             arg_str = ", ".join(arg.render() for arg in self.args)
             base = f"{self.name}[{arg_str}]"
         else:
             base = self.name
 
-        # Nullability handling
-        is_non_nullable = self.name in self.NON_NULLABLE_TYPES
-        is_union_with_none = self.name == "Union" and any(
-            arg.render() == "None" for arg in self.args
-        )
-
-        if self.is_nullable and not is_non_nullable and not is_union_with_none:
-            return f"{base} | None"
-
-        return base
+        return f"{base} | None" if nullable else base
 
 
 class TypeTranslator:
@@ -60,17 +56,25 @@ class TypeTranslator:
         "integer": "int",
         "boolean": "bool",
         "number": "float",
+        "string": "str",
         "null": "None",
     }
 
-    def __init__(self, schema_lookup: SchemaLookup):
-        """
-        Initializes the TypeTranslator with a schema lookup table.
+    format_type_map: dict[tuple[str, str | None], str] = {
+        ("string", "binary"): "bytes",
+    }
+    """
+    Overrides for (type, format) pairs. Extension point: add e.g.
+    ("string", "date-time") -> "datetime.datetime" once value transformation
+    is supported.
+    """
 
-        :param schema_lookup: A SchemaLookup instance for looking up model names
-            by schema.
+    def __init__(self, resolver: RefResolver):
         """
-        self.schema_lookup = schema_lookup
+        :param resolver: Resolver used to map $refs to model names and to
+            dereference refs that don't point at named schemas.
+        """
+        self.resolver = resolver
 
     def __call__(self, schema: Any) -> str:
         """Convenience method to get the rendered string directly."""
@@ -84,9 +88,34 @@ class TypeTranslator:
         if schema is False:
             return TypeNode("Never")  # No value valid
 
-        # Check if schema is a resolved model reference
-        if model_name := self.schema_lookup.get(schema):
-            return TypeNode(model_name)
+        node = self._translate_inner(schema)
+        # 'nullable' (OpenAPI 3.0) combines with nullability found inside
+        # (e.g. an allOf-wrapped $ref with a nullable sibling)
+        node.is_nullable = node.is_nullable or bool(schema.get("nullable", False))
+        return node
+
+    def _translate_inner(self, schema: dict[str, Any]) -> TypeNode:
+        # Named model reference ($ref identity is preserved by the loader)
+        if "$ref" in schema:
+            if model_name := self.resolver.schema_name(schema["$ref"]):
+                return TypeNode(model_name)
+            # Ref to a non-schema location (or nested pointer): inline it
+            return self.translate(self.resolver.deref(schema))
+
+        if "enum" in schema:
+            return self._handle_enum(schema)
+
+        if "oneOf" in schema or "anyOf" in schema:
+            return self._handle_union(schema)
+
+        if "allOf" in schema:
+            # allOf with single item is just that type (common $ref wrapper pattern)
+            all_of = schema["allOf"]
+            if len(all_of) == 1:
+                return self.translate(all_of[0])
+            # Multi-item allOf (intersection) not supported, default to Any
+            # TODO: merge properties into a synthetic model
+            return TypeNode("Any")
 
         schema_type = schema.get("type")
 
@@ -97,28 +126,28 @@ class TypeTranslator:
             elif "items" in schema:
                 schema_type = "array"
 
-        # Handle polymorphic/composition types first
-        if "enum" in schema:
-            node = self._handle_enum(schema)
-        elif any(k in schema for k in ("oneOf", "anyOf")):
-            node = self._handle_poly(schema)
-        elif "allOf" in schema:
-            # allOf with single item is just that type (common $ref wrapper pattern)
-            all_of = schema["allOf"]
-            if len(all_of) == 1:
-                node = self.translate(all_of[0])
-            else:
-                # Multi-item allOf (intersection) not supported, default to Any
-                # TODO: implement this
-                node = TypeNode("Any")
-        elif isinstance(schema_type, list):
-            node = self._handle_multi(schema)
-        else:
-            handler = getattr(self, f"_handle_{schema_type}", self._handle_default)
-            node = handler(schema)
+        # OpenAPI 3.1 multi-type arrays (e.g. type: ["string", "null"])
+        if isinstance(schema_type, list):
+            return self._handle_multi(schema)
 
-        node.is_nullable = schema.get("nullable", False)
-        return node
+        if isinstance(schema_type, str):
+            if override := self.format_type_map.get(
+                (schema_type, schema.get("format"))
+            ):
+                return TypeNode(override)
+            if schema_type == "array":
+                return self._handle_array(schema)
+            if schema_type == "object":
+                return self._handle_object(schema)
+            if primitive := self.primitive_type_map.get(schema_type):
+                return TypeNode(primitive)
+
+        logger.warning(
+            "Unknown schema type %r, defaulting to Any (supported types: %s)",
+            schema_type,
+            ", ".join(self.primitive_type_map),
+        )
+        return TypeNode("Any")
 
     def _handle_enum(self, schema: dict[str, Any]) -> TypeNode:
         literals = [
@@ -127,24 +156,17 @@ class TypeTranslator:
         ]
         return TypeNode("Literal", args=[TypeNode(lit) for lit in literals])
 
-    def _handle_poly(self, schema: dict[str, Any]) -> TypeNode:
+    def _handle_union(self, schema: dict[str, Any]) -> TypeNode:
         """
-        Handles OpenAPI polymorphic types (oneOf/anyOf).
-        """
-        # TODO: anyOf ist not properly handled yet
-        # TODO: Consider discriminators for more accurate typing
-        # TODO: both can be present; need to handle that case
+        Handles oneOf/anyOf composition as a union of the subschemas.
 
-        if "oneOf" in schema:
-            logger.debug("Handling oneOf schema for polymorphism.")
-            nodes = {self.translate(s) for s in schema["oneOf"]}
-            return TypeNode("Union", args=list(nodes))
-        elif "anyOf" in schema:
-            logger.warning("anyOf handling is not supported yet, defaulting to Any.")
-            return TypeNode("Any")
-        else:
-            logger.error("Polymorphic schema without oneOf or anyOf keys.")
-            return TypeNode("Any")
+        anyOf strictly means "valid against at least one" — a union is the
+        closest Python approximation for both.
+        """
+        # TODO: Consider discriminators for more accurate typing
+        subschemas = schema.get("oneOf", []) + schema.get("anyOf", [])
+        nodes = {self.translate(s) for s in subschemas}
+        return TypeNode("Union", args=list(nodes))
 
     def _handle_multi(self, schema: dict[str, Any]) -> TypeNode:
         """
@@ -172,7 +194,7 @@ class TypeTranslator:
 
     def _handle_object(self, schema: dict[str, Any]) -> TypeNode:
         """
-        Handles object schemas not resolved via schema_lookup.
+        Handles inline object schemas (no $ref to a named model).
 
         For typed dicts (additionalProperties with schema), returns dict[str, T].
         For everything else (inline objects, generic objects), returns dict[str, Any].
@@ -182,36 +204,8 @@ class TypeTranslator:
         # Typed dict: {"additionalProperties": {"type": "string"}} -> dict[str, str]
         value_type = self.translate(add_props if isinstance(add_props, dict) else {})
 
-        logger.warning(
-            "Inline object schema detected. Defaulting to dict[str, %s]. ",
+        logger.debug(
+            "Inline object schema detected, defaulting to dict[str, %s]",
             value_type.render(),
         )
         return TypeNode("dict", args=[TypeNode("str"), value_type])
-
-    def _handle_string(self, schema: dict[str, Any]) -> TypeNode:
-        is_binary = schema.get("format") == "binary"
-        return TypeNode("bytes" if is_binary else "str")
-
-    def _handle_default(self, schema: dict[str, Any]) -> TypeNode:
-        schema_type = schema.get("type")
-
-        if isinstance(schema_type, str):
-            primitive_type = self.primitive_type_map.get(schema_type)
-            if primitive_type:
-                return TypeNode(primitive_type)
-
-        # Log and default to Any
-        if not isinstance(schema_type, str):
-            logger.warning(
-                "Schema type is not a string: %s, defaulting to Any",
-                schema_type,
-            )
-        else:
-            logger.warning(
-                "Unknown schema type %s, defaulting to Any",
-                "(supported types: %s)",
-                schema_type,
-                ", ".join(self.primitive_type_map.keys()),
-            )
-
-        return TypeNode("Any")

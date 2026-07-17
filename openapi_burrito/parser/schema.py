@@ -1,18 +1,23 @@
 """Schema parser for OpenAPI specifications."""
 
+import keyword
 import logging
 from typing import Any
 
 from ..utils import dig
-from .lookup import SchemaLookup
 from .models import ParsedModel, ParsedProperty
+from .resolver import RefResolver
 from .sanitize import safe_bool, sanitize
 from .types import TypeTranslator
 
 logger = logging.getLogger(__name__)
 
 
-def flatten_schema(schema: dict[str, Any]) -> dict[str, Any]:
+def flatten_schema(
+    schema: dict[str, Any],
+    resolver: RefResolver,
+    _seen: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     """
     Recursively merges 'allOf' structures into a single flat properties' dictionary.
 
@@ -20,9 +25,12 @@ def flatten_schema(schema: dict[str, Any]) -> dict[str, Any]:
     traversing the tree and aggregating all properties and required fields into
     a single schema representation.
 
-    :param schema: The schema dictionary to flatten.
+    :param schema: The schema (or $ref to one) to flatten.
+    :param resolver: Resolver for dereferencing allOf items.
+    :param _seen: $refs already visited on this branch (guards allOf cycles).
     :return: A new dictionary containing the merged properties and required fields.
     """
+    schema = resolver.deref(schema)
     if not schema.get("allOf"):
         return schema
 
@@ -31,7 +39,13 @@ def flatten_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
     # Recursively process each subschema in the inheritance chain
     for subschema in schema["allOf"]:
-        resolved_sub = flatten_schema(subschema)
+        if isinstance(subschema, dict) and (ref := subschema.get("$ref")):
+            if ref in _seen:
+                logger.warning("Circular allOf inheritance via %r, skipping", ref)
+                continue
+            _seen |= {ref}
+
+        resolved_sub = flatten_schema(subschema, resolver, _seen)
         flat_properties |= resolved_sub.get("properties", {})
         flat_required |= set(resolved_sub.get("required", []))
 
@@ -49,37 +63,38 @@ def flatten_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return flattened_schema
 
 
+def _is_plain_key(name: str) -> bool:
+    """Whether a wire key can be used verbatim in class-syntax TypedDict."""
+    return name.isidentifier() and not keyword.iskeyword(name)
+
+
 class SchemaParser:
     """Parses OpenAPI definitions into a structured list of model dictionaries."""
 
-    def __init__(self, resolved_spec: dict[str, Any]) -> None:
+    def __init__(self, spec: dict[str, Any]) -> None:
         """
-        Initializes the SchemaParser with a resolved OpenAPI specification.
+        Initializes the SchemaParser.
 
-        :param resolved_spec: The resolved OpenAPI specification dictionary.
+        :param spec: The OpenAPI spec with internal $refs left unresolved.
         """
-        self.resolved_spec = resolved_spec
-        self.schema_lookup = SchemaLookup(resolved_spec)
-        self.type_translator = TypeTranslator(self.schema_lookup)
-
-    def __call__(self) -> list[ParsedModel]:
-        """Callable alias for parse method."""
-        return self.parse()
+        self.spec = spec
+        self.resolver = RefResolver(spec)
+        self.type_translator = TypeTranslator(self.resolver)
 
     def parse(self) -> list[ParsedModel]:
         """
         Parses all schemas in the OpenAPI specification.
 
-        :return: A list of dictionaries, each representing a model with its properties.
+        :return: A list of ParsedModel entries, one per named schema.
         """
         models = []
-        schemas = dig(self.resolved_spec, ("components", "schemas"), default={})
+        schemas = dig(self.spec, ("components", "schemas"), default={})
 
         for name, schema in schemas.items():
             logger.debug("Parsing schema %s", name)
 
             # Deep flatten the schema's inheritance structure (if any)
-            flat = flatten_schema(schema)
+            flat = flatten_schema(schema, self.resolver)
             properties = flat.get("properties", {})
             required_fields = set(flat.get("required", []))
 
@@ -93,6 +108,10 @@ class SchemaParser:
                     name=sanitize(name, mode="id"),
                     properties=model_props,
                     doc=sanitize(schema.get("description", ""), mode="doc"),
+                    # Keys must match the wire format; if any key can't be a
+                    # class attribute, the template falls back to functional
+                    # TypedDict syntax for the whole model.
+                    functional=not all(_is_plain_key(p.name) for p in model_props),
                 )
             )
 
@@ -106,16 +125,20 @@ class SchemaParser:
         if not required:
             py_type = f"NotRequired[{py_type}]"
 
-        # Handle default value (already converted by resolver: null->None, etc.)
-        # If "default" key exists, use repr() for template rendering; else None
-        default = repr(schema["default"]) if "default" in schema else None
+        # Metadata (description, default, ...) lives on the resolved schema
+        # when the property is a $ref
+        resolved = self.resolver.deref(schema)
+        default = repr(resolved["default"]) if "default" in resolved else None
 
         return ParsedProperty(
-            name=sanitize(name, mode="id"),
+            # Wire key kept verbatim: TypedDict keys must match the JSON.
+            # Rendering is injection-safe — plain identifiers go through class
+            # syntax, everything else is JSON-escaped in functional syntax.
+            name=name,
             type=py_type,
             required=required,
-            doc=sanitize(schema.get("description", ""), mode="doc"),
-            read_only=safe_bool(schema, "readOnly"),
-            write_only=safe_bool(schema, "writeOnly"),
+            doc=sanitize(resolved.get("description", ""), mode="doc"),
+            read_only=safe_bool(resolved, "readOnly"),
+            write_only=safe_bool(resolved, "writeOnly"),
             default=default,
         )
