@@ -1,8 +1,11 @@
 - [ ] add a note to not use if not res.is error || if not res.error: parse_res(res.data) <- no error does not imply success, could be informational or redirect
 
 
-- [ ] how to do versioning? via git tags? should work with changelog, should work with pyproject.toml and __version__
-- [ ] publish package to pypi -> write GH action for that
+- [x] how to do versioning? -> git tags via hatch-vcs (pyproject + __version__
+      follow automatically); CHANGELOG.md added
+- [x] publish package to pypi -> release GH action on v* tags (trusted
+      publishing; configure the publisher on pypi.org once)
+- [ ] after v0.2.0 is live: yank 0.1.0/0.1.1 on pypi.org (superseded, buggy)
 
 - [ ] share libraey on reddit, discord, etc. -> gather feedback
 
@@ -25,7 +28,7 @@
       types)
 
 - [ ] devops
-  - [ ] add changelog
+  - [x] add changelog
   - [ ] setup dependabot
   - [ ] setup linting
   - [ ] setup prettier
@@ -33,7 +36,7 @@
   - [ ] setup semantic-release
   - [ ] setup husky + lint-staged
   - [ ] setup issue/pr templates
-  - [ ] setup github actions for tests + release
+  - [x] setup github actions for tests + release
   - [ ] setup code coverage reporting
 
 - [ ] add tests

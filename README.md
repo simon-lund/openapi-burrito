@@ -12,6 +12,7 @@
 
 **Wrap your OpenAPI specs in type-safe Python clients**
 
+[![CI](https://github.com/simon-lund/openapi-burrito/actions/workflows/ci.yml/badge.svg)](https://github.com/simon-lund/openapi-burrito/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/openapi-burrito?style=flat&logo=pypi&logoColor=white&color=3775A9)](https://pypi.org/project/openapi-burrito/)
 [![Python](https://img.shields.io/pypi/pyversions/openapi-burrito?style=flat&logo=python&logoColor=white)](https://pypi.org/project/openapi-burrito/)
 [![License](https://img.shields.io/github/license/simon-lund/openapi-burrito?style=flat&color=green)](https://github.com/simon-lund/openapi-burrito/blob/main/LICENSE)
