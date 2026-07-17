@@ -1,0 +1,179 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Edge Cases",
+    "version": "2.3.4",
+    "description": "Spec with \"quotes\" and a backslash \\ in the description"
+  },
+  "paths": {
+    "/users/{userId}": {
+      "description": "Path-level description",
+      "parameters": [
+        {
+          "name": "userId",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "verbose",
+          "in": "query",
+          "schema": { "type": "boolean", "default": false }
+        }
+      ],
+      "get": {
+        "summary": "Get a user",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          },
+          "404": {
+            "description": "not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a user, with a JSON body on DELETE",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        },
+        "responses": { "204": { "description": "deleted" } }
+      }
+    },
+    "/search": {
+      "get": {
+        "summary": "Query params colliding with body slots and each other",
+        "parameters": [
+          { "name": "json", "in": "query", "schema": { "type": "string" } },
+          { "name": "petId", "in": "query", "schema": { "type": "integer" } },
+          { "name": "pet_id", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/vnd.api+json": {
+                "schema": { "$ref": "#/components/schemas/Tree" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "summary": "Raw binary upload",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": { "type": "string", "format": "binary" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/ref-param": {
+      "get": {
+        "summary": "Operation using $ref'd parameter and response",
+        "parameters": [{ "$ref": "#/components/parameters/PageParam" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/UserResponse" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "PageParam": {
+        "name": "page",
+        "in": "query",
+        "schema": { "type": "integer", "default": 1 }
+      }
+    },
+    "responses": {
+      "UserResponse": {
+        "description": "A user",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/User" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "required": ["id", "type"],
+        "description": "Model with wire keys that are not plain identifiers",
+        "properties": {
+          "id": { "type": "integer" },
+          "type": { "type": "string", "enum": ["admin", "guest"] },
+          "user-name": {
+            "type": "string",
+            "description": "hyphenated wire key"
+          },
+          "class": { "type": "string" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } }
+      },
+      "Tree": {
+        "type": "object",
+        "description": "Recursive schema (self-referencing)",
+        "properties": {
+          "name": { "type": "string", "nullable": true },
+          "children": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Tree" }
+          }
+        }
+      },
+      "Admin": {
+        "description": "allOf inheritance",
+        "allOf": [
+          { "$ref": "#/components/schemas/Error" },
+          {
+            "type": "object",
+            "properties": { "level": { "type": "integer" } },
+            "required": ["level"]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -15,3 +15,5 @@ wheels/
 
 # Ignore generated clients in the examples directory
 examples/*/client/
+# Test artifacts
+.coverage
