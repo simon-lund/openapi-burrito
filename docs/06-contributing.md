@@ -40,7 +40,7 @@ openapi_burrito/
 ├── generator.py        # Main generation logic
 ├── utils.py            # Shared utilities (snake_case, normalize_path)
 ├── parser/
-│   ├── lookup.py       # Schema lookup via content hashing
+│   ├── resolver.py     # Internal $ref resolution (ref → model name)
 │   ├── models.py       # Parsed data models (ParsedOperation, etc.)
 │   ├── operation.py    # Parser for paths/operations
 │   ├── sanitize.py     # Security-critical sanitization

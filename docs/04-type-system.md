@@ -107,21 +107,16 @@ All methods return a `Response[T, E]` wrapper around `httpx.Response`:
 
 ```python
 @dataclass
-class Response(Generic[T, E]):
-    status_code: int
+class Response[T, E]:
     _response: httpx.Response
 
     # Typed accessors
     data: T | None   # Success body
     error: E | None  # Error body
+    is_error: bool   # 4xx or 5xx
 
-    # Status helpers
-    is_informational: bool # 1xx
-    is_success: bool       # 2xx
-    is_redirect: bool      # 3xx
-    is_client_error: bool  # 4xx
-    is_server_error: bool  # 5xx
-    is_error: bool         # 4xx or 5xx
+    # Everything else (status_code, headers, is_success, ...) is
+    # forwarded to the underlying httpx.Response
 ```
 
 ### Response Handling Pattern

@@ -59,7 +59,8 @@ else:
   parameters
 - **Type-Safe** - `TypedDict` models and `@overload` signatures
 - **Zero Runtime** - Generated code is yours, no runtime dependency on this tool
-- **httpx-Based** - Async support, connection pooling, all httpx features
+- **httpx-Based** - Connection pooling, timeouts, all httpx client features
+  (async client generation is on the roadmap)
 - **Middleware System** - Logging, retry, auth via composable middleware
 - **Snake Case Params** - Path parameters auto-converted to Python style
   (`{userId}` → `{user_id}`)
@@ -104,13 +105,19 @@ All fields output by the parser are validated/sanitized:
 | Field                                 | Validation             | Notes                                 |
 | ------------------------------------- | ---------------------- | ------------------------------------- |
 | Model/param names                     | `sanitize(mode="id")`  | Converted to valid Python identifiers |
+| Model property keys                   | Identifier check / JSON-escape | Plain identifiers render in class syntax; everything else is JSON-escaped in functional `TypedDict` syntax (keys must match the wire format) |
 | Paths                                 | `sanitize(mode="str")` | String-escaped for literals           |
-| Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped                     |
+| Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped (incl. backslashes) |
 | `type` strings                        | Type translator        | Built from validated schema types     |
 | `method`                              | `HTTPMethod` enum      | Only known HTTP methods allowed       |
 | `in` (param location)                 | Enum check             | Only `path\|query\|header\|cookie`    |
 | `required`, `read_only`, `write_only` | `bool()` cast          | Forced to boolean                     |
 | `default`                             | `repr()`               | Python string representation          |
+| pyproject.toml metadata               | JSON-escape            | TOML-safe string literals             |
+
+Additionally, every generated `.py` file must pass `compile()` and the
+`pyproject.toml` must parse as TOML before anything is written to disk —
+malformed output aborts generation instead of landing in your project.
 
 A malicious spec could attempt injection like:
 
