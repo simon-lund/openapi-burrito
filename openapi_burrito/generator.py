@@ -4,7 +4,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from jinja2 import Environment, FileSystemLoader
 from prance import ResolvingParser
@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 MIN_OPENAPI_VERSION = (3, 0, 0)
+
+ClientMode = Literal["async", "sync", "both"]
 
 
 class GenerationError(Exception):
@@ -59,6 +61,28 @@ def _parse_version(version: str) -> tuple[int, ...]:
         return tuple(int(part) for part in version.split("."))
     except ValueError:
         return (0,)
+
+
+def _looks_like_swagger_2(spec_path: str | Path) -> bool:
+    """
+    Best-effort sniff for a Swagger 2.0 document (top-level "swagger" key).
+
+    Only consulted after parsing already failed, to turn prance's cryptic
+    internals error into an actionable message.
+    """
+    try:
+        path = Path(spec_path)
+        if path.is_file():
+            text = path.read_text(encoding="utf-8", errors="replace")
+        elif str(spec_path).startswith(("http://", "https://")):
+            import httpx
+
+            text = httpx.get(str(spec_path), follow_redirects=True).text
+        else:
+            return False
+    except Exception:
+        return False
+    return re.search(r"[\"']swagger[\"']\s*:\s*[\"']2\.", text) is not None
 
 
 def _validate_rendered(output_name: str, rendered: str) -> None:
@@ -109,23 +133,42 @@ def _format_output(output_dir: Path) -> None:
             return
 
 
-def generate_sdk(spec_path: str | Path, output_dir: str | Path) -> None:
+def generate_sdk(
+    spec_path: str | Path,
+    output_dir: str | Path,
+    client_mode: ClientMode = "async",
+) -> None:
     """
     Generates the Python SDK from the given OpenAPI input source.
 
     :param spec_path: Path or URL to the OpenAPI specification (JSON or YAML).
     :param output_dir: Directory where the generated client will be saved.
+    :param client_mode: Which client class(es) to generate: "async"
+        (AsyncClient, the default), "sync" (Client), or "both". Class names
+        never change with the mode — the flag only controls what is emitted.
     """
     output_dir = Path(output_dir)  # Ensure Path object
+
+    if client_mode not in ("async", "sync", "both"):
+        raise GenerationError(f"Invalid client mode: {client_mode!r}")
 
     # Resolve external (file/HTTP) refs only. Internal #/... refs are kept so
     # the parsers retain ref identity ($ref -> model name) and recursive
     # schemas work.
-    parser = ResolvingParser(
-        str(spec_path),
-        backend="openapi-spec-validator",
-        resolve_types=RESOLVE_FILES | RESOLVE_HTTP,
-    )
+    try:
+        parser = ResolvingParser(
+            str(spec_path),
+            backend="openapi-spec-validator",
+            resolve_types=RESOLVE_FILES | RESOLVE_HTTP,
+        )
+    except Exception as e:
+        if _looks_like_swagger_2(spec_path):
+            raise GenerationError(
+                "This looks like a Swagger 2.0 document; openapi-burrito "
+                "requires OpenAPI 3.0+. Convert it first, e.g. with "
+                "swagger2openapi (npx swagger2openapi <spec>)."
+            ) from e
+        raise
     spec = parser.specification
 
     metadata = extract_metadata(spec)
@@ -165,7 +208,10 @@ def generate_sdk(spec_path: str | Path, output_dir: str | Path) -> None:
         logger.debug("Writing %s", output_name)
 
         rendered = template.render(
-            metadata=metadata, models=models, operations=operations
+            metadata=metadata,
+            models=models,
+            operations=operations,
+            client_mode=client_mode,
         )
         _validate_rendered(output_name, rendered)
         (output_dir / output_name).write_text(rendered, encoding="utf-8")

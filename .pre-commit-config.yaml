@@ -33,3 +33,7 @@ repos:
         language: system
         types: [python]
         require_serial: true
+        # Examples are demo scripts outside the lint scope (make lint checks
+        # openapi_burrito + tests); both being main.py also trips mypy's
+        # duplicate-module detection.
+        exclude: ^examples/

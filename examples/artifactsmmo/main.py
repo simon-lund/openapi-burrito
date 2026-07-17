@@ -1,35 +1,40 @@
 """Artifacts MMO API demo - shows public and authenticated endpoints."""
 
+import asyncio
 import os
 
-from client import Client
+from client import AsyncClient
 
 
-def main():
+async def main():
     print("⚔️ Initializing Artifacts MMO Client...")
 
-    client = Client(base_url="https://api.artifactsmmo.com")
+    client = AsyncClient(base_url="https://api.artifactsmmo.com")
 
     # Add auth middleware if token is available
     token = os.environ.get("ARTIFACTS_TOKEN")
     if token:
+
         @client.middleware
-        def auth(request, call_next):
+        async def auth(request, call_next):
             request.headers["Authorization"] = f"Bearer {token}"
-            return call_next(request)
+            return await call_next(request)
 
     # 1. Server status (public)
     print("\n--- 1. Server Status ---")
-    res = client.GET("/")
+    res = await client.GET("/")
     if res.is_success:
         data = res.data.get("data", {})
-        print(f"✅ Version: {data.get('version')} | Online: {data.get('characters_online')} players")
+        print(
+            f"✅ Version: {data.get('version')} | "
+            f"Online: {data.get('characters_online')} players"
+        )
     else:
         print(f"❌ Failed: {res.error}")
 
     # 2. List items (public)
     print("\n--- 2. List Items ---")
-    res = client.GET("/items", page=1, size=5)
+    res = await client.GET("/items", page=1, size=5)
     if res.is_success:
         items = res.data.get("data", [])
         print(f"✅ Found {res.data.get('total', '?')} items")
@@ -44,7 +49,7 @@ def main():
         return
 
     print("\n--- 3. My Characters ---")
-    res = client.GET("/my/characters")
+    res = await client.GET("/my/characters")
     if res.is_success:
         chars = res.data.get("data", [])
         print(f"✅ Found {len(chars)} characters")
@@ -55,4 +60,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

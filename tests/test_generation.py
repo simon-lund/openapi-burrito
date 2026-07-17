@@ -7,6 +7,7 @@ runtime — template drift (e.g. a constructor changing in models.py.jinja2 but
 not client.py.jinja2) fails here instead of in users' projects.
 """
 
+import asyncio
 import subprocess
 import sys
 import tomllib
@@ -149,7 +150,11 @@ class TestCollisions:
         override picked the operation-level type.
         """
         client_src = (source_dir(edge) / "client.py").read_text()
-        assert client_src.count("user_id: int = REQUIRED") == 1
+        # GET overrides the path-level str with int; once per client class
+        # (sync + async). DELETE has no override, so it keeps the path-level
+        # str — also once per class.
+        assert client_src.count("user_id: int = REQUIRED") == 2
+        assert client_src.count("user_id: str = REQUIRED") == 2
 
     def test_snake_case_collision_renamed(self, edge: ModuleType) -> None:
         recorder = Recorder()
@@ -166,6 +171,60 @@ class TestCollisions:
         api.GET("/search", json_query="q")
         assert recorder.last.url.params["json"] == "q"
         assert recorder.last.read() == b""  # nothing leaked into the body
+
+
+# ---------------------------------------------------------------------------
+# Async client
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncClient:
+    def test_async_request(self, petstore: ModuleType) -> None:
+        recorder = Recorder()
+
+        async def flow() -> Any:
+            api = petstore.AsyncClient(
+                base_url="http://api.test", transport=httpx.MockTransport(recorder)
+            )
+            return await api.GET("/pet/{pet_id}", pet_id=7)
+
+        res = asyncio.run(flow())
+        assert recorder.last.url.path == "/pet/7"
+        assert res.data == {"ok": True}
+
+    def test_async_middleware_chain(self, petstore: ModuleType) -> None:
+        recorder = Recorder()
+        calls: list[str] = []
+
+        async def flow() -> Any:
+            api = petstore.AsyncClient(
+                base_url="http://api.test", transport=httpx.MockTransport(recorder)
+            )
+
+            async def outer(request: httpx.Request, call_next: Any) -> httpx.Response:
+                calls.append("before")
+                response: httpx.Response = await call_next(request)
+                calls.append("after")
+                return response
+
+            api.add_middleware(outer)
+            return await api.POST("/pet", json={"name": "Rex"})
+
+        res = asyncio.run(flow())
+        assert res.status_code == 200
+        assert calls == ["before", "after"]
+
+    def test_async_body_sent(self, edge: ModuleType) -> None:
+        recorder = Recorder(httpx.Response(204))
+
+        async def flow() -> Any:
+            api = edge.AsyncClient(
+                base_url="http://api.test", transport=httpx.MockTransport(recorder)
+            )
+            return await api.DELETE("/users/{user_id}", user_id=1, json={"r": "x"})
+
+        asyncio.run(flow())
+        assert recorder.last.read() == b'{"r":"x"}'
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +259,20 @@ class TestResponse:
         api = make_client(edge, recorder)
         res = api.GET("/search")
         assert res.data == {"name": "root"}
+
+    def test_unwrap_returns_typed_body(self, petstore: ModuleType) -> None:
+        recorder = Recorder(httpx.Response(200, json={"id": 7, "name": "Rex"}))
+        api = make_client(petstore, recorder)
+        pet = api.GET("/pet/{pet_id}", pet_id=7).unwrap()
+        assert pet == {"id": 7, "name": "Rex"}
+
+    def test_unwrap_raises_on_error(self, petstore: ModuleType) -> None:
+        recorder = Recorder(httpx.Response(404, json={"msg": "nope"}))
+        api = make_client(petstore, recorder)
+        with pytest.raises(petstore.ResponseError) as exc_info:
+            api.GET("/pet/{pet_id}", pet_id=404).unwrap()
+        assert exc_info.value.response.status_code == 404
+        assert exc_info.value.response.error == {"msg": "nope"}
 
     def test_malformed_json_falls_back_to_bytes(self, petstore: ModuleType) -> None:
         recorder = Recorder(
@@ -238,6 +311,47 @@ class TestModels:
         # $ref'd parameter and response resolve to the page param + User model
         assert "Response[User, Any]" in client_src
         assert "page: Query[int] = 1" in client_src
+
+
+# ---------------------------------------------------------------------------
+# Client modes
+# ---------------------------------------------------------------------------
+
+
+class TestClientModes:
+    """--client async|sync|both controls what is emitted, never what a name means."""
+
+    @pytest.mark.parametrize(
+        ("mode", "expect_sync", "expect_async"),
+        [("async", False, True), ("sync", True, False), ("both", True, True)],
+    )
+    def test_mode_controls_emitted_classes(
+        self, tmp_path: Path, mode: str, expect_sync: bool, expect_async: bool
+    ) -> None:
+        from openapi_burrito.generator import generate_sdk
+
+        out = tmp_path / f"client_{mode}"
+        generate_sdk(
+            Path(__file__).parent / "fixtures" / "petstore.json",
+            out,
+            client_mode=mode,  # type: ignore[arg-type]
+        )
+        client_src = (out / "client.py").read_text()
+        init_src = (out / "__init__.py").read_text()
+
+        assert ("class Client:" in client_src) is expect_sync
+        assert ("class AsyncClient:" in client_src) is expect_async
+        assert ('"Client"' in init_src) is expect_sync
+        assert ('"AsyncClient"' in init_src) is expect_async
+
+    def test_default_mode_is_async(self, tmp_path: Path) -> None:
+        from openapi_burrito.generator import generate_sdk
+
+        out = tmp_path / "client_default"
+        generate_sdk(Path(__file__).parent / "fixtures" / "petstore.json", out)
+        client_src = (out / "client.py").read_text()
+        assert "class AsyncClient:" in client_src
+        assert "class Client:" not in client_src
 
 
 # ---------------------------------------------------------------------------

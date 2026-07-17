@@ -1,4 +1,5 @@
 import logging
+from enum import Enum
 from pathlib import Path
 
 import typer
@@ -7,6 +8,15 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 
 from .generator import generate_sdk
+
+
+class ClientChoice(str, Enum):
+    """Which client class(es) to generate."""
+
+    async_ = "async"
+    sync = "sync"
+    both = "both"
+
 
 console = Console()
 
@@ -71,6 +81,13 @@ def generate(
         dir_okay=True,
         writable=True,
     ),
+    client: ClientChoice = typer.Option(
+        ClientChoice.async_,
+        "--client",
+        "-c",
+        help="Which client to generate: async (AsyncClient, default), "
+        "sync (Client), or both.",
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Enable verbose logging"
     ),
@@ -94,7 +111,7 @@ def generate(
     typer.echo(f"  - Output: {output_dir}")
 
     try:
-        generate_sdk(spec_source, output_dir)
+        generate_sdk(spec_source, output_dir, client_mode=client.value)
         console.print(
             f"\n:sparkles: Successfully generated client in {output_dir}",
             style="bold green",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import fnmatch
 import json
 
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Annotated, Any, Final, Callable, Literal, Never, NotRequired, TypedDict, cast
 
@@ -23,6 +24,12 @@ type HandlerT = Callable[[httpx.Request], httpx.Response]
 
 type MiddlewareT = Callable[[httpx.Request, HandlerT], httpx.Response]
 """Middleware function type alias: (request, call_next) -> response."""
+
+type AsyncHandlerT = Callable[[httpx.Request], Awaitable[httpx.Response]]
+"""Async handler that turns a request into a response (innermost: actual send)."""
+
+type AsyncMiddlewareT = Callable[[httpx.Request, AsyncHandlerT], Awaitable[httpx.Response]]
+"""Async middleware function type alias: async (request, call_next) -> response."""
 
 class UnsetType:
     """
@@ -111,6 +118,19 @@ class Response[T,E]:
         """Typed error body. None if not a 4xx/5xx response."""
         return cast("E | None", self._parse()) if self.is_error else None
 
+    def unwrap(self) -> T:
+        """
+        Returns the typed success body, raising ResponseError for non-2xx.
+
+        Unlike .data (which is T | None and needs a None-check even after
+        an is_success guard), unwrap() gives the type checker a plain T:
+
+            pet = api.GET("/pet/{pet_id}", pet_id=1).unwrap()
+        """
+        if not self.is_success:
+            raise ResponseError(self)
+        return cast("T", self._parse())
+
     # Explicitly typed passthroughs (the __getattr__ fallback is invisible
     # to type checkers, so the common surface is declared here)
     @property
@@ -198,6 +218,19 @@ class Response[T,E]:
     def __repr__(self) -> str:
         """Dynamic representation using the actual class name."""
         return f"<{self.__class__.__name__} [{self.status_code}]>"
+
+
+class ResponseError(Exception):
+    """
+    Raised by Response.unwrap() when the response is not a 2xx.
+
+    The full typed response stays available as .response, so error bodies
+    can still be inspected: exc.response.error / exc.response.status_code.
+    """
+
+    def __init__(self, response: Response[Any, Any]) -> None:
+        super().__init__(f"Request failed with status {response.status_code}")
+        self.response: Response[Any, Any] = response
 
 
 # -------------------------------------------------------------------------
