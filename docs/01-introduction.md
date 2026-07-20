@@ -59,17 +59,7 @@ async def main():
 asyncio.run(main())
 ```
 
-Inside an async framework (FastAPI, etc.) you already have an event loop —
-skip the `asyncio.run` and `await` directly in your handlers.
-
-With `--client sync` the API is identical minus the `await`:
-
-```python
-from my_client import Client
-
-api = Client(base_url="https://api.example.com")
-res = api.GET("/users/{user_id}", user_id=123)
-```
+With `--client sync` the API is identical minus the `await`.
 
 > **Note**: Path parameters are automatically converted to snake_case. OpenAPI's
 > `{userId}` becomes `{user_id}` in the generated client.
