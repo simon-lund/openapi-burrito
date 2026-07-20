@@ -35,22 +35,32 @@ This creates a self-contained Python package with:
 ## Basic Usage
 
 ```python
+import asyncio
+
 from my_client import AsyncClient
 
-# Initialize with base URL
-api = AsyncClient(base_url="https://api.example.com")
 
-# GET request with path parameter (note: snake_case)
-res = await api.GET("/users/{user_id}", user_id=123)
+async def main():
+    # Initialize with base URL
+    api = AsyncClient(base_url="https://api.example.com")
 
-if res.is_success:
-    print(res.data)
-else:
-    print(f"Error: {res.error}")
+    # GET request with path parameter (note: snake_case)
+    res = await api.GET("/users/{user_id}", user_id=123)
 
-# POST request with JSON body
-res = await api.POST("/users", json={"name": "Alice", "email": "alice@example.com"})
+    if res.is_success:
+        print(res.data)
+    else:
+        print(f"Error: {res.error}")
+
+    # POST request with JSON body
+    res = await api.POST("/users", json={"name": "Alice"})
+
+
+asyncio.run(main())
 ```
+
+Inside an async framework (FastAPI, etc.) you already have an event loop —
+skip the `asyncio.run` and `await` directly in your handlers.
 
 With `--client sync` the API is identical minus the `await`:
 

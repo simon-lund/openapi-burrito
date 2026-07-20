@@ -56,6 +56,9 @@ else:
 user = (await api.GET("/users/{user_id}", user_id=123)).unwrap()
 ```
 
+> `await` needs an async context: wrap calls in an `async def` +
+> `asyncio.run(...)`, or try snippets interactively with `python -m asyncio`.
+
 Prefer sync? Generate with `--client sync` and drop the `await`s — same
 paths, same overloads, `httpx.Client` underneath:
 
