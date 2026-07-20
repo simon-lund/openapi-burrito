@@ -26,23 +26,8 @@ async def logging_middleware(request, call_next):
     return response
 ```
 
-## Sync Middleware
-
-The sync `Client` (`--client sync`) uses the same pattern with plain
-functions — no `await`:
-
-```python
-from my_client import Client
-
-client = Client(base_url="https://api.example.com")
-
-@client.middleware
-def logging_middleware(request, call_next):
-    print(f"→ {request.method} {request.url}")
-    response = call_next(request)
-    print(f"← {response.status_code}")
-    return response
-```
+> The sync `Client` (`--client sync`) works exactly the same — just drop the
+> `async` and `await` keywords.
 
 ## Middleware with Timing
 
