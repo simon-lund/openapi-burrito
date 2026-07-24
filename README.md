@@ -40,24 +40,28 @@ openapi-burrito generate openapi.json -o ./my_client
 ```
 
 ```python
+import asyncio
+
 from my_client import AsyncClient
 
-api = AsyncClient(base_url="https://api.example.com")
 
-# Path-first API: type-checked paths and snake_case parameters
-res = await api.GET("/users/{user_id}", user_id=123)
+async def main():
+    api = AsyncClient(base_url="https://api.example.com")
 
-if res.is_success:
-    print(res.data)
-else:
-    print(f"Error {res.status_code}: {res.error}")
+    # Path-first API: type-checked paths and snake_case parameters
+    res = await api.GET("/users/{user_id}", user_id=123)
 
-# Or let errors raise: unwrap() returns the typed body directly
-user = (await api.GET("/users/{user_id}", user_id=123)).unwrap()
+    if res.is_success:
+        print(res.data)
+    else:
+        print(f"Error {res.status_code}: {res.error}")
+
+    # Or let errors raise: unwrap() returns the typed body directly
+    user = (await api.GET("/users/{user_id}", user_id=123)).unwrap()
+
+
+asyncio.run(main())
 ```
-
-> `await` needs an async context: wrap calls in an `async def` +
-> `asyncio.run(...)`, or try snippets interactively with `python -m asyncio`.
 
 Prefer sync? Generate with `--client sync` and drop the `await`s — same
 paths, same overloads, `httpx.Client` underneath:
@@ -151,7 +155,7 @@ All fields output by the parser are validated/sanitized:
 | Model/param names                     | `sanitize(mode="id")`  | Converted to valid Python identifiers |
 | Model property keys                   | Identifier check / JSON-escape | Plain identifiers render in class syntax; everything else is JSON-escaped in functional `TypedDict` syntax (keys must match the wire format) |
 | Paths                                 | `sanitize(mode="str")` | String-escaped for literals           |
-| Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped (incl. backslashes) |
+| Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped (backslashes, control chars) |
 | `type` strings                        | Type translator        | Built from validated schema types     |
 | `method`                              | `HTTPMethod` enum      | Only known HTTP methods allowed       |
 | `in` (param location)                 | Enum check             | Only `path\|query\|header\|cookie`    |

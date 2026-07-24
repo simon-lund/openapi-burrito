@@ -81,9 +81,20 @@ def _sanitize_identifier(value: str) -> str:
     return sanitized
 
 
+# Control characters that must not land raw in generated source. NUL is a
+# hard error for compile(); the rest are escaped for robustness. \n and \t
+# are excluded here — the modes below decide their fate individually.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_CONTROL_CHARS_AND_CR = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _escape_control(value: str, pattern: re.Pattern[str]) -> str:
+    return pattern.sub(lambda m: f"\\x{ord(m.group()):02x}", value)
+
+
 def _sanitize_string(value: str) -> str:
     """Escapes a string for safe inclusion in a Python string literal."""
-    return (
+    escaped = (
         value.replace("\\", "\\\\")
         .replace('"', '\\"')
         .replace("'", "\\'")
@@ -91,6 +102,7 @@ def _sanitize_string(value: str) -> str:
         .replace("\r", "\\r")
         .replace("\t", "\\t")
     )
+    return _escape_control(escaped, _CONTROL_CHARS)
 
 
 def _sanitize_docstring(value: str) -> str:
@@ -98,11 +110,14 @@ def _sanitize_docstring(value: str) -> str:
     Escapes a string for safe inclusion in a triple-quoted docstring.
 
     Backslashes are escaped first so a trailing backslash cannot swallow the
-    closing quotes, and so pre-existing backslashes render verbatim.
+    closing quotes, and so pre-existing backslashes render verbatim. Control
+    characters (incl. \\r, which source parsing would normalize to \\n) are
+    escaped; real newlines and tabs stay literal — docstrings want them.
     """
-    return (
+    escaped = (
         value.replace("\\", "\\\\").replace('"""', r"\"\"\"").replace("'''", r"\'\'\'")
     )
+    return _escape_control(escaped, _CONTROL_CHARS_AND_CR)
 
 
 def safe_bool(d: dict[str, Any], key: str, default: bool = False) -> bool:

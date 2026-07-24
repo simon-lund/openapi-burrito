@@ -88,6 +88,10 @@ class TypeTranslator:
         if schema is False:
             return TypeNode("Never")  # No value valid
 
+        if not isinstance(schema, dict):
+            logger.warning("Schema is not an object: %r, defaulting to Any", schema)
+            return TypeNode("Any")
+
         node = self._translate_inner(schema)
         # 'nullable' (OpenAPI 3.0) combines with nullability found inside
         # (e.g. an allOf-wrapped $ref with a nullable sibling)
@@ -111,7 +115,7 @@ class TypeTranslator:
         if "allOf" in schema:
             # allOf with single item is just that type (common $ref wrapper pattern)
             all_of = schema["allOf"]
-            if len(all_of) == 1:
+            if isinstance(all_of, list) and len(all_of) == 1:
                 return self.translate(all_of[0])
             # Multi-item allOf (intersection) not supported, default to Any
             # TODO: merge properties into a synthetic model
@@ -131,8 +135,9 @@ class TypeTranslator:
             return self._handle_multi(schema)
 
         if isinstance(schema_type, str):
+            fmt = schema.get("format")
             if override := self.format_type_map.get(
-                (schema_type, schema.get("format"))
+                (schema_type, fmt if isinstance(fmt, str) else None)
             ):
                 return TypeNode(override)
             if schema_type == "array":
@@ -150,9 +155,13 @@ class TypeTranslator:
         return TypeNode("Any")
 
     def _handle_enum(self, schema: dict[str, Any]) -> TypeNode:
+        values = schema["enum"]
+        if not isinstance(values, list) or not values:
+            logger.warning("Malformed enum %r, defaulting to Any", values)
+            return TypeNode("Any")
         literals = [
             f'"{sanitize(v, mode="str")}"' if isinstance(v, str) else str(v)
-            for v in schema["enum"]
+            for v in values
         ]
         return TypeNode("Literal", args=[TypeNode(lit) for lit in literals])
 
@@ -164,7 +173,11 @@ class TypeTranslator:
         closest Python approximation for both.
         """
         # TODO: Consider discriminators for more accurate typing
-        subschemas = schema.get("oneOf", []) + schema.get("anyOf", [])
+        one_of = schema.get("oneOf")
+        any_of = schema.get("anyOf")
+        subschemas = (one_of if isinstance(one_of, list) else []) + (
+            any_of if isinstance(any_of, list) else []
+        )
         nodes = {self.translate(s) for s in subschemas}
         return TypeNode("Union", args=list(nodes))
 
