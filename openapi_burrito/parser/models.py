@@ -35,8 +35,6 @@ class ParsedArg:
     """Python type annotation string"""
     in_: Literal["path", "query", "header", "cookie", "body"]
     """Argument location"""
-    required: bool
-    """Whether the argument is required"""
     default: str
     """Default value (REQUIRED, UNSET, or repr() of actual default)"""
     doc: str = ""
@@ -76,9 +74,7 @@ class ParsedProperty:
     name: str
     """Original wire-format key, verbatim (TypedDict keys must match the JSON)"""
     type: str
-    """Python type annotation string"""
-    required: bool
-    """Whether the property is required"""
+    """Python type annotation string (optional props pre-wrapped in NotRequired)"""
     doc: str = ""
     """Property documentation"""
     read_only: bool = False
@@ -101,7 +97,18 @@ class ParsedModel:
     """Model documentation"""
     functional: bool = False
     """
-    Render with functional TypedDict syntax. Set when any wire key is not a
-    plain Python identifier (e.g. 'user-name', 'class') — class syntax would
-    require renaming keys, which breaks runtime dict access.
+    TypedDict has two spellings. Class syntax writes keys as attribute names::
+
+        class User(TypedDict):
+            name: str
+
+    That only works when every key is a valid identifier and not a keyword —
+    ``class: str`` is a SyntaxError, ``user-name: str`` too. Renaming keys is
+    not an option: a TypedDict is a plain dict at runtime, so its keys must
+    match the JSON on the wire exactly. For such models the template uses the
+    functional spelling instead, where keys are arbitrary string literals::
+
+        User = TypedDict("User", {"user-name": str, "class": str})
+
+    This flag tells the template which spelling to render.
     """

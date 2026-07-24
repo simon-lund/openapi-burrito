@@ -3,6 +3,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 MIN_OPENAPI_VERSION = (3, 0, 0)
 
-ClientMode = Literal["async", "sync", "both"]
+Mode = Literal["async", "sync"]
+
+DEFAULT_MODES: tuple[Mode, ...] = ("async",)
 
 
 class GenerationError(Exception):
@@ -136,21 +139,22 @@ def _format_output(output_dir: Path) -> None:
 def generate_sdk(
     spec_path: str | Path,
     output_dir: str | Path,
-    client_mode: ClientMode = "async",
+    client_modes: Collection[Mode] = DEFAULT_MODES,
 ) -> None:
     """
     Generates the Python SDK from the given OpenAPI input source.
 
     :param spec_path: Path or URL to the OpenAPI specification (JSON or YAML).
     :param output_dir: Directory where the generated client will be saved.
-    :param client_mode: Which client class(es) to generate: "async"
-        (AsyncClient, the default), "sync" (Client), or "both". Class names
-        never change with the mode — the flag only controls what is emitted.
+    :param client_modes: Which client flavors to generate: any subset of
+        {"async", "sync"} (default: async only). Class names never change
+        with the modes — they only control what is emitted.
     """
     output_dir = Path(output_dir)  # Ensure Path object
 
-    if client_mode not in ("async", "sync", "both"):
-        raise GenerationError(f"Invalid client mode: {client_mode!r}")
+    modes = set(client_modes)
+    if not modes or not modes <= {"async", "sync"}:
+        raise GenerationError(f"Invalid client modes: {sorted(modes)!r}")
 
     # Resolve external (file/HTTP) refs only. Internal #/... refs are kept so
     # the parsers retain ref identity ($ref -> model name) and recursive
@@ -211,7 +215,8 @@ def generate_sdk(
             metadata=metadata,
             models=models,
             operations=operations,
-            client_mode=client_mode,
+            async_client="async" in modes,
+            sync_client="sync" in modes,
         )
         _validate_rendered(output_name, rendered)
         (output_dir / output_name).write_text(rendered, encoding="utf-8")

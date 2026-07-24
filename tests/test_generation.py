@@ -319,22 +319,30 @@ class TestModels:
 
 
 class TestClientModes:
-    """--client async|sync|both controls what is emitted, never what a name means."""
+    """--client controls what is emitted, never what a name means."""
 
     @pytest.mark.parametrize(
-        ("mode", "expect_sync", "expect_async"),
-        [("async", False, True), ("sync", True, False), ("both", True, True)],
+        ("modes", "expect_sync", "expect_async"),
+        [
+            (("async",), False, True),
+            (("sync",), True, False),
+            (("async", "sync"), True, True),
+        ],
     )
-    def test_mode_controls_emitted_classes(
-        self, tmp_path: Path, mode: str, expect_sync: bool, expect_async: bool
+    def test_modes_control_emitted_classes(
+        self,
+        tmp_path: Path,
+        modes: tuple[str, ...],
+        expect_sync: bool,
+        expect_async: bool,
     ) -> None:
         from openapi_burrito.generator import generate_sdk
 
-        out = tmp_path / f"client_{mode}"
+        out = tmp_path / f"client_{'_'.join(modes)}"
         generate_sdk(
             Path(__file__).parent / "fixtures" / "petstore.json",
             out,
-            client_mode=mode,  # type: ignore[arg-type]
+            client_modes=modes,  # type: ignore[arg-type]
         )
         client_src = (out / "client.py").read_text()
         init_src = (out / "__init__.py").read_text()
@@ -343,6 +351,15 @@ class TestClientModes:
         assert ("class AsyncClient:" in client_src) is expect_async
         assert ('"Client"' in init_src) is expect_sync
         assert ('"AsyncClient"' in init_src) is expect_async
+
+    def test_invalid_modes_rejected(self, tmp_path: Path) -> None:
+        from openapi_burrito.generator import GenerationError, generate_sdk
+
+        spec = Path(__file__).parent / "fixtures" / "petstore.json"
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            generate_sdk(spec, tmp_path / "x", client_modes=())
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            generate_sdk(spec, tmp_path / "y", client_modes=("both",))  # type: ignore[arg-type]
 
     def test_default_mode_is_async(self, tmp_path: Path) -> None:
         from openapi_burrito.generator import generate_sdk

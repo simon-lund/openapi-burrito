@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - **Async by default**: `generate` now emits `AsyncClient` unless told
   otherwise. Use `--client sync` for the synchronous `Client` or
-  `--client both` for the pair. Class names never change with the mode.
+  repeat the flag (`-c async -c sync`) for both. Class names never
+  change with the modes.
 - **Keyword-only parameters**: all arguments after `path` must be passed by
   keyword (`api.GET("/pet/{pet_id}", pet_id=1)`); this matches the runtime
   routing and makes the `@overload` surface sound under `mypy --strict`.
@@ -25,7 +26,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - `AsyncClient` with async middleware support (`AsyncMiddlewareT`).
-- `--client async|sync|both` CLI flag (default: `async`).
+- Repeatable `--client async|sync` CLI flag (default: `async`).
 - `Response.unwrap()` returning the typed body directly, raising
   `ResponseError` (with the full typed response attached) on non-2xx.
 - Recursive schemas (`$ref` cycles) now generate correctly.

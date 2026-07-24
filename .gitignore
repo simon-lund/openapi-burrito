@@ -17,3 +17,6 @@ wheels/
 examples/*/client/
 # Test artifacts
 .coverage
+
+# Personal planning file, stays local
+.todo

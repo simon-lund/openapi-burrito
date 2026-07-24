@@ -1,18 +1,18 @@
 from .client import (
-    {%- if client_mode in ("async", "both") %}
+    {%- if async_client %}
     AsyncClient,
     {%- endif %}
-    {%- if client_mode in ("sync", "both") %}
+    {%- if sync_client %}
     Client,
     {%- endif %}
 )
 from .models import *
 
 __all__ = [
-    {%- if client_mode in ("sync", "both") %}
+    {%- if sync_client %}
     "Client",
     {%- endif %}
-    {%- if client_mode in ("async", "both") %}
+    {%- if async_client %}
     "AsyncClient",
     {%- endif %}
     "Query",

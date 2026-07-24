@@ -29,9 +29,11 @@ def generated_client(
     def _load(spec_name: str) -> ModuleType:
         package = f"{spec_name}_client"
         if package not in packages:
-            # "both" so the suite can exercise sync and async surfaces
+            # Both flavors so the suite can exercise sync and async surfaces
             generate_sdk(
-                FIXTURES / f"{spec_name}.json", root / package, client_mode="both"
+                FIXTURES / f"{spec_name}.json",
+                root / package,
+                client_modes=("async", "sync"),
             )
             packages[package] = importlib.import_module(package)
         return packages[package]

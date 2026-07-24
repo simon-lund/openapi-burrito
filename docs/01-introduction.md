@@ -21,7 +21,8 @@ openapi-burrito generate openapi.json -o ./my_client
 ```
 
 By default this generates an **async** client (`AsyncClient`). Prefer sync?
-Use `--client sync` (emits `Client`), or `--client both` for the pair.
+Use `--client sync` (emits `Client`), or repeat the flag
+(`-c async -c sync`) for the pair.
 
 This creates a self-contained Python package with:
 

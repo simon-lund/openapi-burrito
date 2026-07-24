@@ -77,7 +77,7 @@ res = api.GET("/users/{user_id}", user_id=123)
 - **Type-Safe** - `TypedDict` models and `@overload` signatures; generated
   code passes `mypy --strict`
 - **Async by Default** - `AsyncClient` out of the box; `--client sync` or
-  `--client both` when you need the synchronous `Client`
+  `-c async -c sync` when you need the synchronous `Client` too
 - **Zero Runtime** - Generated code is yours; its only dependency is httpx
 - **httpx-Based** - Connection pooling, timeouts, all httpx client features
 - **Middleware System** - Logging, retry, auth via composable middleware

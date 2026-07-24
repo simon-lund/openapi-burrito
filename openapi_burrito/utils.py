@@ -1,24 +1,4 @@
 import re
-from collections.abc import Iterable
-from typing import Any
-
-
-def dig(data: Any, path: Iterable[Any], default: Any = None) -> Any:
-    """
-    Safely navigates a nested dict/list structure.
-    Returns default if any key is missing or an index is out of bounds.
-
-    :param data: The initial data structure (dict or list).
-    :param path: An iterable of keys/indices to traverse the structure.
-    :param default: The value to return if any key/index is missing.
-    :return: The value found at the end of the path, or default.
-    """
-    for key in path:
-        try:
-            data = data[key]
-        except (KeyError, TypeError, IndexError):
-            return default
-    return data
 
 
 def to_snake_case(name: str) -> str:

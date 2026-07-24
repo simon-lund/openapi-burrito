@@ -190,7 +190,6 @@ class OperationParser:
                     api_name=name,
                     type=type_,
                     in_=in_,
-                    required=required,
                     default=default,
                     doc=sanitize(description, mode="doc"),
                 )
@@ -225,7 +224,6 @@ class OperationParser:
             api_name=None,
             type=self.type_translator(schema),
             in_="body",
-            required=required,
             default=default,
             doc=doc,
         )

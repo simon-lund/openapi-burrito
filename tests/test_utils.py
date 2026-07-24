@@ -1,24 +1,6 @@
 """Unit tests for utility functions."""
 
-from openapi_burrito.utils import dig, normalize_path, to_snake_case
-
-
-class TestDig:
-    def test_dig_existing_key(self) -> None:
-        data = {"a": {"b": 1}}
-        assert dig(data, ["a", "b"]) == 1
-
-    def test_dig_missing_key_returns_default(self) -> None:
-        data = {"a": {"b": 1}}
-        assert dig(data, ["a", "c"], default=2) == 2
-
-    def test_dig_list_index(self) -> None:
-        data = {"a": [10, 20]}
-        assert dig(data, ["a", 1]) == 20
-
-    def test_dig_list_index_out_of_bounds(self) -> None:
-        data = {"a": [10, 20]}
-        assert dig(data, ["a", 5]) is None
+from openapi_burrito.utils import normalize_path, to_snake_case
 
 
 class TestToSnakeCase:

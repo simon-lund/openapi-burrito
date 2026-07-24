@@ -260,10 +260,10 @@ class {{ class_name }}:
         return Response(res)
 {% endmacro %}
 
-{% if client_mode in ("sync", "both") -%}
+{% if sync_client -%}
 {{ client_class("Client", "Client", false) }}
 {%- endif %}
 
-{% if client_mode in ("async", "both") -%}
+{% if async_client -%}
 {{ client_class("AsyncClient", "AsyncClient", true) }}
 {%- endif %}

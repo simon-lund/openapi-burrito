@@ -4,7 +4,6 @@ import keyword
 import logging
 from typing import Any
 
-from ..utils import dig
 from .models import ParsedModel, ParsedProperty
 from .resolver import RefResolver
 from .sanitize import safe_bool, sanitize
@@ -88,7 +87,7 @@ class SchemaParser:
         :return: A list of ParsedModel entries, one per named schema.
         """
         models = []
-        schemas = dig(self.spec, ("components", "schemas"), default={})
+        schemas = self.spec.get("components", {}).get("schemas", {})
 
         for name, schema in schemas.items():
             logger.debug("Parsing schema %s", name)
@@ -136,7 +135,6 @@ class SchemaParser:
             # syntax, everything else is JSON-escaped in functional syntax.
             name=name,
             type=py_type,
-            required=required,
             doc=sanitize(resolved.get("description", ""), mode="doc"),
             read_only=safe_bool(resolved, "readOnly"),
             write_only=safe_bool(resolved, "writeOnly"),

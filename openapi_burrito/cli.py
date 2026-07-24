@@ -10,12 +10,11 @@ from rich.panel import Panel
 from .generator import generate_sdk
 
 
-class ClientChoice(str, Enum):
-    """Which client class(es) to generate."""
+class Mode(str, Enum):
+    """Client flavor to generate."""
 
     async_ = "async"
     sync = "sync"
-    both = "both"
 
 
 console = Console()
@@ -81,12 +80,13 @@ def generate(
         dir_okay=True,
         writable=True,
     ),
-    client: ClientChoice = typer.Option(
-        ClientChoice.async_,
+    client: list[Mode] = typer.Option(
+        [Mode.async_],
         "--client",
         "-c",
-        help="Which client to generate: async (AsyncClient, default), "
-        "sync (Client), or both.",
+        help="Client flavor(s) to generate: async (AsyncClient, default) "
+        "or sync (Client). Repeat the flag to generate both "
+        "(-c async -c sync).",
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Enable verbose logging"
@@ -111,7 +111,7 @@ def generate(
     typer.echo(f"  - Output: {output_dir}")
 
     try:
-        generate_sdk(spec_source, output_dir, client_mode=client.value)
+        generate_sdk(spec_source, output_dir, client_modes={m.value for m in client})
         console.print(
             f"\n:sparkles: Successfully generated client in {output_dir}",
             style="bold green",
