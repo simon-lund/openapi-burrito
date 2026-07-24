@@ -33,12 +33,11 @@ type AsyncMiddlewareT = Callable[[httpx.Request, AsyncHandlerT], Awaitable[httpx
 
 class UnsetType:
     """
-    A sentinel value to represent unset parameters.
+    Sentinel type for parameters that were not passed at all.
 
-    Used to differentiate between an explicit `None` (JSON null) and a
-    parameter that was omitted from the request.
-
-    Any UNSET parameter will be omitted from the serialized request.
+    None cannot play this role: None is JSON null, a value a caller may
+    legitimately want to send. UNSET means "omit this parameter from the
+    request entirely".
     """
     def __repr__(self) -> str:
         return "UNSET"
@@ -46,12 +45,12 @@ class UnsetType:
 
 class RequiredType:
     """
-    A sentinel value to represent required parameters.
+    Sentinel type for required parameters.
 
-    Used to explicitly mark parameters as required in function signatures.
-
-    Any REQUIRED parameter must be provided by the caller,
-    or a TypeError will be raised.
+    Signatures are ordered by location (path, body, query, header, cookie),
+    so a required parameter can follow an optional one. Python only allows
+    that if it has a default; REQUIRED is that placeholder. If it is still
+    present when the request is built, a TypeError is raised.
     """
     def __repr__(self) -> str:
         return "REQUIRED"
@@ -61,7 +60,7 @@ class RequiredType:
 # default for any type hint, keeping the function signatures clean.
 UNSET: Final[Any] = cast(Any, UnsetType())
 """
-The sentinel instance used for optional parameters.
+Sentinel default for optional parameters. See UnsetType.
 
 Example:
     >>> def foo(a: str | None = UNSET):
@@ -69,7 +68,7 @@ Example:
     ...         return "a is unset"
     ...     return f"set to {a}"
     >>> foo()
-    'unset'
+    'a is unset'
     >>> foo("5")
     'set to 5'
     >>> foo(None)
@@ -78,7 +77,7 @@ Example:
 
 REQUIRED: Final[Any] = cast(Any, RequiredType())
 """
-The sentinel instance used for required parameters.
+Sentinel default for required parameters. See RequiredType.
 
 Example:
     >>> def foo(a: str = REQUIRED):
