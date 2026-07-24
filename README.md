@@ -160,7 +160,7 @@ All fields output by the parser are validated/sanitized:
 | Paths                                 | `sanitize(mode="str")` | String-escaped for literals           |
 | Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped (backslashes, control chars) |
 | `type` strings                        | Type translator        | Built from validated schema types     |
-| `method`                              | `HTTPMethod` enum      | Only known HTTP methods allowed       |
+| `method`                              | Allow-list             | Only known HTTP methods allowed       |
 | `in` (param location)                 | Enum check             | Only `path\|query\|header\|cookie`    |
 | `required`, `read_only`, `write_only` | `bool()` cast          | Forced to boolean                     |
 | `default`                             | `repr()`               | Python string representation          |

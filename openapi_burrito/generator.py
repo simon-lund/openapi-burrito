@@ -11,7 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 from prance import ResolvingParser
 from prance.util.resolver import RESOLVE_FILES, RESOLVE_HTTP
 
-from .parser.operation import OperationParser
+from .parser.operation import SUPPORTED_METHODS, OperationParser
 from .parser.schema import SchemaParser
 
 logger = logging.getLogger(__name__)
@@ -217,6 +217,7 @@ def generate_sdk(
             operations=operations,
             async_client="async" in modes,
             sync_client="sync" in modes,
+            http_methods=SUPPORTED_METHODS,
         )
         _validate_rendered(output_name, rendered)
         (output_dir / output_name).write_text(rendered, encoding="utf-8")

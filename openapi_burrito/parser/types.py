@@ -10,6 +10,11 @@ from .sanitize import sanitize
 logger = logging.getLogger(__name__)
 
 
+def _as_list(value: Any) -> list[Any]:
+    """Malformed-spec guard: anything that should be a list but is not."""
+    return value if isinstance(value, list) else []
+
+
 @dataclass
 class TypeNode:
     """Represents a Python type hint as a structured node for manipulation."""
@@ -114,8 +119,8 @@ class TypeTranslator:
 
         if "allOf" in schema:
             # allOf with single item is just that type (common $ref wrapper pattern)
-            all_of = schema["allOf"]
-            if isinstance(all_of, list) and len(all_of) == 1:
+            all_of = _as_list(schema["allOf"])
+            if len(all_of) == 1:
                 return self.translate(all_of[0])
             # Multi-item allOf (intersection) not supported, default to Any
             # TODO: merge properties into a synthetic model
@@ -155,9 +160,9 @@ class TypeTranslator:
         return TypeNode("Any")
 
     def _handle_enum(self, schema: dict[str, Any]) -> TypeNode:
-        values = schema["enum"]
-        if not isinstance(values, list) or not values:
-            logger.warning("Malformed enum %r, defaulting to Any", values)
+        values = _as_list(schema["enum"])
+        if not values:
+            logger.warning("Malformed enum %r, defaulting to Any", schema["enum"])
             return TypeNode("Any")
         literals = [
             f'"{sanitize(v, mode="str")}"' if isinstance(v, str) else str(v)
@@ -173,11 +178,7 @@ class TypeTranslator:
         closest Python approximation for both.
         """
         # TODO: Consider discriminators for more accurate typing
-        one_of = schema.get("oneOf")
-        any_of = schema.get("anyOf")
-        subschemas = (one_of if isinstance(one_of, list) else []) + (
-            any_of if isinstance(any_of, list) else []
-        )
+        subschemas = _as_list(schema.get("oneOf")) + _as_list(schema.get("anyOf"))
         nodes = {self.translate(s) for s in subschemas}
         return TypeNode("Union", args=list(nodes))
 

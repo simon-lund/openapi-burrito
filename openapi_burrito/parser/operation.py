@@ -2,22 +2,29 @@
 
 import logging
 from dataclasses import replace
-from http import HTTPMethod
 from typing import Any, Literal
 
 from ..utils import normalize_path, to_snake_case
-from .models import (
-    REQUIRED,
-    UNSET,
-    ParsedArg,
-    ParsedOperation,
-    ParsedResponses,
-)
+from .models import REQUIRED, UNSET, ParsedArg, ParsedOperation
 from .resolver import RefResolver
 from .sanitize import safe_bool, safe_status, sanitize
 from .types import TypeTranslator
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_METHODS: tuple[str, ...] = (
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+)
+"""HTTP methods the generator supports (also drives the client template)."""
+
+VALID_LOCATIONS = ("path", "query", "header", "cookie")
+"""Valid parameter locations in OpenAPI spec."""
 
 RESERVED_ARG_NAMES = {"self", "path", "json", "data", "files", "content"}
 """
@@ -43,20 +50,6 @@ def _is_json_mime(mime: str) -> bool:
 
 class OperationParser:
     """Parses all operations from an OpenAPI spec into a structured format."""
-
-    valid_http_methods = (
-        HTTPMethod.GET,
-        HTTPMethod.POST,
-        HTTPMethod.PUT,
-        HTTPMethod.DELETE,
-        HTTPMethod.PATCH,
-        HTTPMethod.HEAD,
-        HTTPMethod.OPTIONS,
-    )
-    """Valid HTTP methods in OpenAPI spec."""
-
-    valid_locations = ("path", "query", "header", "cookie")
-    """Valid parameter locations in OpenAPI spec."""
 
     def __init__(self, spec: dict[str, Any]) -> None:
         """
@@ -84,13 +77,9 @@ class OperationParser:
             path_params = path_item.get("parameters", [])
 
             for method_name, op_data in path_item.items():
-                method = self._get_valid_method(method_name)
-                if not method:
-                    logger.debug(
-                        "Skipping invalid HTTP method %s in path %s",
-                        method_name,
-                        path,
-                    )
+                method = method_name.upper()
+                if method not in SUPPORTED_METHODS:
+                    logger.debug("Skipping key %s in path %s", method_name, path)
                     continue
 
                 raw_params = self._merge_parameters(
@@ -108,12 +97,16 @@ class OperationParser:
                     if arg.in_ == "path" and arg.api_name
                 }
 
+                success_type, error_type = self._parse_responses(
+                    op_data.get("responses", {})
+                )
                 operations.append(
                     ParsedOperation(
                         path=normalize_path(sanitize(path, mode="str"), path_renames),
-                        method=method.value,
+                        method=method,
                         args=args,
-                        responses=self._parse_responses(op_data.get("responses", {})),
+                        success_type=success_type,
+                        error_type=error_type,
                         doc=sanitize(
                             self._generate_docstring(op_data, path_item), mode="doc"
                         ),
@@ -121,17 +114,6 @@ class OperationParser:
                 )
 
         return operations
-
-    def _get_valid_method(self, method_name: str) -> HTTPMethod | None:
-        """Helper to validate and filter HTTP methods."""
-        try:
-            method = HTTPMethod(method_name.upper())
-            if method in self.valid_http_methods:
-                return method
-        except ValueError:
-            pass
-
-        return None
 
     def _merge_parameters(
         self, path_params: list[Any], op_params: list[Any]
@@ -162,13 +144,13 @@ class OperationParser:
 
             # Validate parameter location
             in_ = param.get("in", "")
-            if in_ not in self.valid_locations:
+            if in_ not in VALID_LOCATIONS:
                 logger.warning(
                     "Skipping parameter %s with unsupported location %s, "
                     "only %s are supported",
                     name,
                     in_,
-                    ", ".join(self.valid_locations),
+                    ", ".join(VALID_LOCATIONS),
                 )
                 continue
 
@@ -292,7 +274,7 @@ class OperationParser:
 
         return final_args
 
-    def _parse_responses(self, responses: dict[str, Any]) -> ParsedResponses:
+    def _parse_responses(self, responses: dict[str, Any]) -> tuple[str, str]:
         """
         Parses success and error response schemas of an operation.
 
@@ -342,9 +324,9 @@ class OperationParser:
                     code,
                 )
 
-        return ParsedResponses(
-            success_type=self._aggregate_type(parsed, "success"),
-            error_type=self._aggregate_type(parsed, "error"),
+        return (
+            self._aggregate_type(parsed, "success"),
+            self._aggregate_type(parsed, "error"),
         )
 
     def _aggregate_type(
@@ -386,9 +368,5 @@ class OperationParser:
         summary = op.get("summary", "").strip()
         op_desc = op.get("description", "").strip()
         path_desc = path_item.get("description", "").strip()
-        paragraphs = filter(
-            None, (summary, op_desc, path_desc if path_desc not in op_desc else None)
-        )
-        return "\n\n".join(
-            paragraphs or ["No description provided. See OpenAPI spec for details."]
-        )
+        paragraphs = (summary, op_desc, path_desc if path_desc not in op_desc else None)
+        return "\n\n".join(filter(None, paragraphs))

@@ -146,7 +146,7 @@ class {{ class_name }}:
         self.add_middleware(func)
         return func
 
-    {%- for method_name in ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] %}
+    {%- for method_name in http_methods %}
     {%- set method_ops = operations | selectattr("method", "equalto", method_name) | list %}
 
     # -------------------------------------------------------------------------
@@ -164,7 +164,7 @@ class {{ class_name }}:
             {%- for p in op.args %}
             {{ p.name }}: {{ p.type }} = {{ p.default }},
             {%- endfor %}
-    ) -> Response[{{ op.responses.success_type }}, {{ op.responses.error_type }}]:
+    ) -> Response[{{ op.success_type }}, {{ op.error_type }}]:
         """
         {{ op.doc | default(op.path, true) | wordwrap(72) | indent(8) }}
         """

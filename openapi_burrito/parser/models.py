@@ -42,16 +42,6 @@ class ParsedArg:
 
 
 @dataclass
-class ParsedResponses:
-    """Represents parsed response types for an operation."""
-
-    success_type: str
-    """Type annotation for 2xx responses"""
-    error_type: str
-    """Type annotation for 4xx/5xx responses"""
-
-
-@dataclass
 class ParsedOperation:
     """Represents a fully parsed API operation."""
 
@@ -61,8 +51,10 @@ class ParsedOperation:
     """API path"""
     args: list[ParsedArg]
     """All operation arguments (path, query, header, cookie, body)"""
-    responses: ParsedResponses
-    """Response type information"""
+    success_type: str
+    """Type annotation for 2xx responses"""
+    error_type: str
+    """Type annotation for 4xx/5xx responses"""
     doc: str = ""
     """Operation documentation"""
 
