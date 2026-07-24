@@ -7,21 +7,20 @@ from .models import *
 
 # Maps Python argument names (snake_case, collision suffixes) back to the
 # original parameter names the API expects.
+{#- Empty locations are omitted: the runtime reads them with .get(loc, {}).
+    Operations without parameters still get an (empty) entry, since a fully
+    absent key means "path not in the spec" and takes the escape hatch. #}
 _PARAM_MAP: dict[tuple[str, str], dict[str, dict[str, str]]] = {
     {%- for op in operations %}
     ("{{ op.method }}", "{{ op.path }}"): {
-        "path": {
-            {%- for p in op.args if p.in_ == 'path' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
+        {%- for loc in ("path", "query", "header", "cookie") %}
+        {%- set loc_params = op.args | selectattr("in_", "equalto", loc) | list %}
+        {%- if loc_params %}
+        "{{ loc }}": {
+            {%- for p in loc_params %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
         },
-        "query": {
-            {%- for p in op.args if p.in_ == 'query' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
-        },
-        "header": {
-            {%- for p in op.args if p.in_ == 'header' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
-        },
-        "cookie": {
-            {%- for p in op.args if p.in_ == 'cookie' %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
-        },
+        {%- endif %}
+        {%- endfor %}
     },
     {%- endfor %}
 }
