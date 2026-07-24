@@ -5,8 +5,8 @@ import httpx
 
 from .models import *
 
-# Static lookup table for parameter locations and API names, shared by the
-# sync and async clients (i.e. mapping of snake_case to original names)
+# Maps Python argument names (snake_case, collision suffixes) back to the
+# original parameter names the API expects.
 _PARAM_MAP: dict[tuple[str, str], dict[str, dict[str, str]]] = {
     {%- for op in operations %}
     ("{{ op.method }}", "{{ op.path }}"): {
