@@ -190,10 +190,9 @@ class Response[T,E]:
         if not self._response.content:
             return None
 
-        # Isolate MIME type (ignore charset)
+        # Ignore charset etc. after the semicolon
         ctype = self.headers.get("content-type", "").lower().split(";")[0]
 
-        # Identify the JSON flavor
         is_standard_json = ctype == "application/json" or fnmatch.fnmatch(ctype, "*+json")
         is_ndjson = any(sub in ctype for sub in ["ndjson", "jsonl", "json-seq"])
 
@@ -201,7 +200,6 @@ class Response[T,E]:
             if is_standard_json:
                 return self._response.json()
 
-            # Return list of dicts for newline-delimited (nd) streams
             if is_ndjson:
                 return [
                     json.loads(line)

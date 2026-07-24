@@ -37,21 +37,16 @@ def _prepare_request(
     params: dict[str, Any],
 ) -> httpx.Request:
     """Validates and categorizes parameters, then builds the httpx request."""
-    # Ensure all required parameters are set
-    # (i.e., no REQUIRED sentinel should be left)
     for k, v in params.items():
         if isinstance(v, RequiredType):
             raise TypeError(f"Missing required parameter: {k}")
 
-    # Filter out UNSET, i.e. optional, parameters.
-    # -> Any UNSET values are omitted from the request.
-    # None values for nullable parameters are kept.
+    # Drop UNSET; keep None (it is JSON null)
     clean_params = {
         k: v for k, v in params.items()
         if not isinstance(v, UnsetType)
     }
 
-    # Parameter Categorization via Static Map
     spec = _PARAM_MAP.get((method, path))
     path_vals: dict[str, Any] = {}
     query_vals: dict[str, Any] = {}
@@ -65,18 +60,15 @@ def _prepare_request(
         for k, v in clean_params.items():
             (path_vals if k in placeholders else query_vals)[k] = v
     else:
-        # Map snake_case args back to API parameter names
         path_map = spec.get("path", {})
         query_map = spec.get("query", {})
         header_map = spec.get("header", {})
         cookie_map = spec.get("cookie", {})
 
-        # Map values to their respective locations
-        # and API parameter names
         unknown_params = []
         for k, v in clean_params.items():
             if k in path_map:
-                # Path params use snake_case key since path template is normalized
+                # Keep the Python name: the path template uses snake_case too
                 path_vals[k] = v
             elif k in query_map:
                 query_vals[query_map[k]] = v
@@ -96,7 +88,6 @@ def _prepare_request(
     try:
         formatted_path = path.format(**path_vals)
     except KeyError as e:
-        # Re-raise with a clear error if a path parameter is missing
         raise TypeError(f"Missing required path parameter: {e}") from e
 
     return client.build_request(
@@ -239,9 +230,7 @@ class {{ class_name }}:
             self.client, method, path, json, data, files, content, params or {}
         )
 
-        # Build the middleware chain
-        # We want the last added middleware to wrap the chain first (onion layers)
-        # Middleware signature: (request, call_next) -> response
+        # reversed(): the first middleware added becomes the outermost layer
         {{ adef }} send_handler(req: httpx.Request) -> httpx.Response:
             return {{ aw }}self.client.send(req)
 
