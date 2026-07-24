@@ -95,7 +95,10 @@ and your runtime should stay out of the way.**
 
 - **Dicts in, dicts out.** Responses are plain dicts typed as `TypedDict` —
   no model classes to instantiate, serialize, or fight with. `res.data` IS
-  the parsed JSON.
+  the parsed JSON. This is what makes the zero-runtime promise possible:
+  where model classes need a deserialization layer (and that layer needs a
+  runtime dependency), a `TypedDict` is erased at runtime — nothing to
+  construct, no per-request overhead, nothing to import but httpx.
 - **No validation, no coercion.** The generated client does not validate
   payloads against the schema and does not convert strings to `datetime`.
   Your type checker verifies structure at development time; at runtime you
