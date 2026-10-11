@@ -1,8 +1,21 @@
-import re
 from typing import Any, Literal, overload
 
 import httpx
 
+from ._runtime import (
+    AsyncHandlerT,
+    AsyncMiddlewareT,
+    Cookie,
+    HandlerT,
+    Header,
+    MiddlewareT,
+    Path,
+    Query,
+    REQUIRED,
+    Response,
+    UNSET,
+    prepare_request,
+)
 from .models import *
 
 # Maps Python argument names (snake_case, collision suffixes) back to the
@@ -25,82 +38,6 @@ _PARAM_MAP: dict[tuple[str, str], dict[str, dict[str, str]]] = {
     {%- endfor %}
 }
 
-
-def _prepare_request(
-    client: httpx.Client | httpx.AsyncClient,
-    method: str,
-    path: str,
-    json: Any,
-    data: Any,
-    files: Any,
-    content: Any,
-    params: dict[str, Any],
-) -> httpx.Request:
-    """Validates and categorizes parameters, then builds the httpx request."""
-    for k, v in params.items():
-        if isinstance(v, RequiredType):
-            raise TypeError(f"Missing required parameter: {k}")
-
-    # Drop UNSET; keep None (it is JSON null)
-    clean_params = {
-        k: v for k, v in params.items()
-        if not isinstance(v, UnsetType)
-    }
-
-    spec = _PARAM_MAP.get((method, path))
-    path_vals: dict[str, Any] = {}
-    query_vals: dict[str, Any] = {}
-    header_vals: dict[str, Any] = {}
-    cookie_vals: dict[str, Any] = {}
-
-    if spec is None:
-        # Escape hatch: path not defined in the OpenAPI spec. Fill any
-        # {placeholders} from kwargs and send the rest as query params.
-        placeholders = set(re.findall(r"\{([^}]+)\}", path))
-        for k, v in clean_params.items():
-            (path_vals if k in placeholders else query_vals)[k] = v
-    else:
-        path_map = spec.get("path", {})
-        query_map = spec.get("query", {})
-        header_map = spec.get("header", {})
-        cookie_map = spec.get("cookie", {})
-
-        unknown_params = []
-        for k, v in clean_params.items():
-            if k in path_map:
-                # Keep the Python name: the path template uses snake_case too
-                path_vals[k] = v
-            elif k in query_map:
-                query_vals[query_map[k]] = v
-            elif k in header_map:
-                header_vals[header_map[k]] = v
-            elif k in cookie_map:
-                cookie_vals[cookie_map[k]] = v
-            else:
-                unknown_params.append(k)
-
-        if unknown_params:
-            raise TypeError(
-                f"Unknown parameter(s) {unknown_params!r} for {method} {path}. "
-                "Request bodies use the json/data/files/content arguments."
-            )
-
-    try:
-        formatted_path = path.format(**path_vals)
-    except KeyError as e:
-        raise TypeError(f"Missing required path parameter: {e}") from e
-
-    return client.build_request(
-        method,
-        formatted_path,
-        json=json,
-        data=data,
-        files=files,
-        content=content,
-        params=query_vals,
-        headers=header_vals,
-        cookies=cookie_vals,
-    )
 
 
 {#- Macro rendering a full client class, parametrized over sync/async.
@@ -226,8 +163,16 @@ class {{ class_name }}:
             content: Any = None,
             params: dict[str, Any] | None = None,
     ) -> Response[Any, Any]:
-        request = _prepare_request(
-            self.client, method, path, json, data, files, content, params or {}
+        request = prepare_request(
+            self.client,
+            method,
+            path,
+            json=json,
+            data=data,
+            files=files,
+            content=content,
+            params=params or {},
+            locations=_PARAM_MAP.get((method, path)),
         )
 
         # reversed(): the first middleware added becomes the outermost layer

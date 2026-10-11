@@ -11,10 +11,14 @@ from jinja2 import Environment, FileSystemLoader
 from prance import ResolvingParser
 from prance.util.resolver import RESOLVE_FILES, RESOLVE_HTTP
 
+from . import runtime
 from .parser.operation import SUPPORTED_METHODS, OperationParser
 from .parser.schema import SchemaParser
 
 logger = logging.getLogger(__name__)
+
+RUNTIME_SOURCE = Path(runtime.__file__)
+"""Vendored verbatim into every generated package as _runtime.py."""
 
 
 MIN_OPENAPI_VERSION = (3, 0, 0)
@@ -218,8 +222,13 @@ def generate_sdk(
             async_client="async" in modes,
             sync_client="sync" in modes,
             http_methods=SUPPORTED_METHODS,
+            runtime_exports=runtime.__all__,
         )
         _validate_rendered(output_name, rendered)
         (output_dir / output_name).write_text(rendered, encoding="utf-8")
+
+    (output_dir / "_runtime.py").write_text(
+        RUNTIME_SOURCE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     _format_output(output_dir)
