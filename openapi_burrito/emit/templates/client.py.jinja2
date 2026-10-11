@@ -25,19 +25,15 @@ from .models import *
     absent key means "path not in the spec" and takes the escape hatch. #}
 _PARAM_MAP: dict[tuple[str, str], dict[str, dict[str, str]]] = {
     {%- for op in operations %}
-    ("{{ op.method }}", "{{ op.path }}"): {
-        {%- for loc in ("path", "query", "header", "cookie") %}
-        {%- set loc_params = op.args | selectattr("in_", "equalto", loc) | list %}
-        {%- if loc_params %}
-        "{{ loc }}": {
-            {%- for p in loc_params %}"{{ p.name }}": "{{ p.api_name }}",{% endfor -%}
+    ({{ op.method | py }}, {{ op.path | py }}): {
+        {%- for location, names in op.locations.items() %}
+        {{ location | py }}: {
+            {%- for name, api_name in names.items() %}{{ name | py }}: {{ api_name | py }},{% endfor -%}
         },
-        {%- endif %}
         {%- endfor %}
     },
     {%- endfor %}
 }
-
 
 
 {#- Macro rendering a full client class, parametrized over sync/async.
@@ -83,34 +79,34 @@ class {{ class_name }}:
         self.add_middleware(func)
         return func
 
-    {%- for method_name in http_methods %}
-    {%- set method_ops = operations | selectattr("method", "equalto", method_name) | list %}
+    {%- for method in methods %}
+    {%- set method_ops = operations | selectattr("method", "equalto", method) | list %}
 
     # -------------------------------------------------------------------------
-    # {{ method_name }} Operations
+    # {{ method }} Operations
     # -------------------------------------------------------------------------
     {%- for op in method_ops %}
 
     @overload
-    {{ adef }} {{ method_name }}(
+    {{ adef }} {{ method }}(
             self,
-            path: Literal["{{ op.path }}"],
+            path: Literal[{{ op.path | py }}],
             {%- if op.args %}
             *,
             {%- endif %}
-            {%- for p in op.args %}
-            {{ p.name }}: {{ p.type }} = {{ p.default }},
+            {%- for arg in op.args %}
+            {{ arg.name }}: {{ arg.annotation }} = {{ arg.default }},
             {%- endfor %}
-    ) -> Response[{{ op.success_type }}, {{ op.error_type }}]:
+    ) -> {{ op.response }}:
         """
-        {{ op.doc | default(op.path, true) | wordwrap(72) | indent(8) }}
+        {{ op.doc | wordwrap(72, break_long_words=False, break_on_hyphens=False) | indent(8) }}
         """
         ...
     {%- endfor %}
     {%- if method_ops %}
 
     @overload
-    {{ adef }} {{ method_name }}(
+    {{ adef }} {{ method }}(
             self,
             path: str,
             *,
@@ -126,7 +122,7 @@ class {{ class_name }}:
         ...
     {%- endif %}
 
-    {{ adef }} {{ method_name }}(
+    {{ adef }} {{ method }}(
         self,
         path: str,
         *,
@@ -137,10 +133,10 @@ class {{ class_name }}:
         **kwargs: Any,
     ) -> Response[Any, Any]:
         """
-        Generic {{ method_name }} implementation.
+        Generic {{ method }} implementation.
         """
         return {{ aw }}self._request(
-            "{{ method_name }}",
+            {{ method | py }},
             path,
             json=json,
             data=data,

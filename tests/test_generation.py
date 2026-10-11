@@ -19,6 +19,8 @@ from typing import Any
 import httpx
 import pytest
 
+from openapi_burrito import GenerationError, generate
+
 
 def source_dir(module: ModuleType) -> Path:
     """Directory the generated package was written to."""
@@ -336,13 +338,11 @@ class TestClientModes:
         expect_sync: bool,
         expect_async: bool,
     ) -> None:
-        from openapi_burrito.generator import generate_sdk
-
         out = tmp_path / f"client_{'_'.join(modes)}"
-        generate_sdk(
+        generate(
             Path(__file__).parent / "fixtures" / "petstore.json",
             out,
-            client_modes=modes,  # type: ignore[arg-type]
+            modes=modes,  # type: ignore[arg-type]
         )
         client_src = (out / "client.py").read_text()
         init_src = (out / "__init__.py").read_text()
@@ -353,19 +353,27 @@ class TestClientModes:
         assert ('"AsyncClient"' in init_src) is expect_async
 
     def test_invalid_modes_rejected(self, tmp_path: Path) -> None:
-        from openapi_burrito.generator import GenerationError, generate_sdk
-
         spec = Path(__file__).parent / "fixtures" / "petstore.json"
         with pytest.raises(GenerationError, match="Invalid client modes"):
-            generate_sdk(spec, tmp_path / "x", client_modes=())
+            generate(spec, tmp_path / "x", modes=())
         with pytest.raises(GenerationError, match="Invalid client modes"):
-            generate_sdk(spec, tmp_path / "y", client_modes=("both",))  # type: ignore[arg-type]
+            generate(spec, tmp_path / "y", modes=("both",))  # type: ignore[arg-type]
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            # A bare string must not be iterated as characters
+            generate(spec, tmp_path / "z", modes="both")  # type: ignore[arg-type]
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            # The error path itself must not crash on unorderable input
+            generate(spec, tmp_path / "w", modes=("async", 3))  # type: ignore[arg-type]
+
+    def test_bare_string_mode_is_accepted(self, tmp_path: Path) -> None:
+        spec = Path(__file__).parent / "fixtures" / "petstore.json"
+        out = tmp_path / "client_sync"
+        generate(spec, out, modes="sync")  # type: ignore[arg-type]
+        assert "class Client:" in (out / "client.py").read_text()
 
     def test_default_mode_is_async(self, tmp_path: Path) -> None:
-        from openapi_burrito.generator import generate_sdk
-
         out = tmp_path / "client_default"
-        generate_sdk(Path(__file__).parent / "fixtures" / "petstore.json", out)
+        generate(Path(__file__).parent / "fixtures" / "petstore.json", out)
         client_src = (out / "client.py").read_text()
         assert "class AsyncClient:" in client_src
         assert "class Client:" not in client_src

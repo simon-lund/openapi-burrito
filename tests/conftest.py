@@ -8,7 +8,7 @@ from types import ModuleType
 
 import pytest
 
-from openapi_burrito.generator import generate_sdk
+from openapi_burrito import generate
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -30,10 +30,10 @@ def generated_client(
         package = f"{spec_name}_client"
         if package not in packages:
             # Both flavors so the suite can exercise sync and async surfaces
-            generate_sdk(
+            generate(
                 FIXTURES / f"{spec_name}.json",
                 root / package,
-                client_modes=("async", "sync"),
+                modes=("async", "sync"),
             )
             packages[package] = importlib.import_module(package)
         return packages[package]

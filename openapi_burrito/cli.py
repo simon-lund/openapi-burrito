@@ -7,14 +7,18 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 
-from .generator import generate_sdk
+from . import generator
+from .emit import MODES
 
 
 class Mode(str, Enum):
-    """Client flavor to generate."""
+    """Client flavor to generate. Typer needs an Enum; emit.MODES is the truth."""
 
     async_ = "async"
     sync = "sync"
+
+
+assert {m.value for m in Mode} == set(MODES)
 
 
 console = Console()
@@ -111,7 +115,7 @@ def generate(
     typer.echo(f"  - Output: {output_dir}")
 
     try:
-        generate_sdk(spec_source, output_dir, client_modes={m.value for m in client})
+        generator.generate(spec_source, output_dir, modes={m.value for m in client})
         console.print(
             f"\n:sparkles: Successfully generated client in {output_dir}",
             style="bold green",

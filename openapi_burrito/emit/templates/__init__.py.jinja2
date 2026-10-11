@@ -21,9 +21,9 @@ __all__ = [
     "AsyncClient",
     {%- endif %}
     {%- for name in runtime_exports %}
-    "{{ name }}",
+    {{ name | py }},
     {%- endfor %}
     {%- for model in models %}
-    "{{ model.name }}",
+    {{ model.name | py }},
     {%- endfor %}
 ]
