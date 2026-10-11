@@ -28,6 +28,14 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
 
 ### Breaking
 
+- **Python API**: `generate_sdk(spec, out, client_modes=...)` is now
+  `generate(spec, out, modes=...)`; `GenerationError` lives in
+  `openapi_burrito.emit` (re-exported from the package root).
+- **Generated output differs textually from 0.1.x**: the runtime is a
+  separate `_runtime.py` (re-exported from the package root, so
+  `from sdk import Response, UNSET` is unchanged); literals are rendered with
+  `repr()`; error response unions include `bytes` for
+  `application/octet-stream` bodies; path parameters are always required.
 - **Async by default**: `generate` now emits `AsyncClient` unless told
   otherwise. Use `--client sync` for the synchronous `Client` or
   repeat the flag (`-c async -c sync`) for both. Class names never
@@ -63,9 +71,6 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
 - Clear error for Swagger 2.0 documents, pointing at `swagger2openapi`.
 - Operations carry `tags` and `operation_id` in the IR, so a client can be
   filtered before emitting.
-- Error response unions include `bytes` for `application/octet-stream`
-  bodies (the runtime already returned them).
-- Path parameters are always required, whatever the spec says.
 
 ### Fixed
 
