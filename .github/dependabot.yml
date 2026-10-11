@@ -1,0 +1,21 @@
+# Dependency updates, batched monthly. The 30-day cooldown means a freshly
+# published version is never proposed on day one — most supply-chain attacks
+# are caught within days of publication.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 30
+
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 30
+    groups:
+      dev-dependencies:
+        dependency-type: "development"

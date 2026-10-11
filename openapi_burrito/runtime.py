@@ -19,20 +19,20 @@ from typing import Annotated, Any, Final, cast
 import httpx
 
 __all__ = [
-    "Query",
-    "Header",
-    "Cookie",
-    "Path",
-    "HandlerT",
-    "MiddlewareT",
+    "REQUIRED",
+    "UNSET",
     "AsyncHandlerT",
     "AsyncMiddlewareT",
-    "UnsetType",
+    "Cookie",
+    "HandlerT",
+    "Header",
+    "MiddlewareT",
+    "Path",
+    "Query",
     "RequiredType",
-    "UNSET",
-    "REQUIRED",
     "Response",
     "ResponseError",
+    "UnsetType",
 ]
 
 # Type wrappers for parameter locations. They are documentation in the

@@ -124,7 +124,7 @@ def generate(
         console.print(f"\n:x: Error: {e}", style="red")
         if verbose:
             raise  # This will show the full stack trace if -v is used
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()

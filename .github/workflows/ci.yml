@@ -5,23 +5,36 @@ on:
     branches: [main]
   pull_request:
 
+# A new push to the same branch/PR supersedes the running job
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        # 3.14: prance's dependency chain (referencing/attrs) segfaults at
+        # import as of 2026-10; add it once `uv run --python 3.14 pytest` passes
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
 
       - name: Install dependencies
+        # --locked: fail if uv.lock is out of date with pyproject.toml
         # --extra preview: mypy checks preview.py, which imports fastapi/uvicorn
-        run: uv sync --extra preview --group dev --group test
+        run: uv sync --locked --extra preview --group dev --group test
 
       - name: Lint (ruff)
         run: |
@@ -31,5 +44,53 @@ jobs:
       - name: Type-check (mypy)
         run: uv run mypy openapi_burrito tests
 
-      - name: Test (pytest)
-        run: uv run pytest --cov=openapi_burrito
+      - name: Test (pytest + coverage)
+        run: uv run pytest --cov
+
+  examples:
+    # The fixtures in tests/ are small; the example specs are real-world size.
+    # Generating them and type-checking the output catches regressions the
+    # unit tests cannot see (overload explosion, odd schemas, formatting).
+    name: Generate examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Generate and type-check example clients
+        run: |
+          for example in examples/*/; do
+            name=$(basename "$example")
+            uv run openapi-burrito generate "$example/openapi.json" -o "/tmp/$name" -y -c async -c sync
+            (cd "/tmp/$name" && "$GITHUB_WORKSPACE/.venv/bin/python" -m mypy --strict .)
+          done
+
+  build:
+    name: Build package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # hatch-vcs reads the version from tags
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Check package metadata
+        run: uv tool run twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

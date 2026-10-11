@@ -71,6 +71,14 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
 - Clear error for Swagger 2.0 documents, pointing at `swagger2openapi`.
 - Operations carry `tags` and `operation_id` in the IR, so a client can be
   filtered before emitting.
+- Models are emitted dependencies-first (`Api.dependency_order()`), so
+  functional-syntax TypedDicts get real annotations; only a reference that
+  closes a cycle is still a forward-reference string.
+- A property's own `description` beside a `$ref` wins over the referenced
+  model's.
+- CI verifies the lockfile, builds the package, and generates + type-checks
+  the example clients; Dependabot proposes updates monthly with a 30-day
+  cooldown.
 
 ### Fixed
 
@@ -95,6 +103,10 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
 - `modes="sync"` (a bare string) is accepted instead of being iterated as
   characters; the invalid-modes error no longer crashes on mixed types.
 - Long docstring tokens are never split inside an escape sequence.
+- The post-format ruff run no longer leaves a `.ruff_cache/` inside the
+  generated package.
+- Non-finite float defaults (`.inf` in YAML) render as `float("inf")`
+  instead of the string `"inf"`.
 - The generated `pyproject.toml` uses the spec's real version and no longer
   depends on the unused `cattrs`.
 

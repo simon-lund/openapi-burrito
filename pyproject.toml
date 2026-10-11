@@ -20,7 +20,7 @@ keywords = [
 classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
+    # 3.14: prance's dependency chain (referencing/attrs) segfaults at import, 2026-10
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
@@ -63,18 +63,64 @@ packages = ["openapi_burrito"]
 
 [tool.ruff]
 target-version = "py312"
+line-length = 88
+extend-exclude = ["examples/*/client"] # generated, gitignored
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "N"] # Error, Flake, Import sort, Upgrade, Naming
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "UP",       # pyupgrade
+    "N",        # pep8-naming
+    "B",        # bugbear: likely bugs (mutable defaults, late-binding closures, ...)
+    "C4",       # comprehensions
+    "SIM",      # simplify
+    "PIE",      # misc lints
+    "PT",       # pytest style
+    "PTH",      # pathlib over os.path / open()
+    "PERF",     # performance anti-patterns
+    "RUF",      # ruff-specific (unused noqa, ambiguous unicode, ...)
+    "T20",      # no stray print()
+    "G", "LOG", # logging: %-style args, no f-strings, correct logger usage
+]
 fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"openapi_burrito/cli.py" = ["B008"] # typer.Option()/Argument() as defaults is the typer idiom
+"examples/**" = ["T20", "G004"]      # demo scripts print and log freely
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
+warn_unreachable = true
 
 [[tool.mypy.overrides]]
 module = "prance.*"
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["openapi_burrito"]
+omit = ["openapi_burrito/preview.py"] # starts a server; exercised by hand
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 85
+exclude_also = [
+    'if __name__ == "__main__":',
+    "raise NotImplementedError",
+]
 
 
 [tool.hatch.version]

@@ -49,11 +49,13 @@ def _format_output(output_dir: Path) -> None:
     Formatting failures are logged, never fatal — the code is already
     validated, just less pretty.
     """
-    ruff = [sys.executable, "-m", "ruff"]
     # --isolated: ignore any ruff config found in parent directories
+    # --no-cache: never leave a .ruff_cache/ inside the generated package
+    ruff = [sys.executable, "-m", "ruff"]
+    flags = ["--isolated", "--no-cache", "--quiet"]
     commands = [
-        [*ruff, "check", "--fix", "--select", "F401,I", "--isolated", "--quiet", "."],
-        [*ruff, "format", "--isolated", "--quiet", "."],
+        [*ruff, "check", "--fix", "--select", "F401,I", *flags, "."],
+        [*ruff, "format", *flags, "."],
     ]
     for command in commands:
         try:
