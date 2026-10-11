@@ -2,9 +2,9 @@
 End-to-end generation tests: generate real clients from fixture specs, import
 them, and drive them through httpx.MockTransport.
 
-These pin the contract between the parser, the templates, and the generated
-runtime — template drift (e.g. a constructor changing in models.py.jinja2 but
-not client.py.jinja2) fails here instead of in users' projects.
+These pin the contract between the emitter's templates and the vendored
+runtime end to end — a template calling the runtime wrongly fails here instead
+of in users' projects.
 """
 
 import asyncio

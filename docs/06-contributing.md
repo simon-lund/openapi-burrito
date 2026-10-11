@@ -37,20 +37,24 @@ Thank you for considering contributing to `openapi-burrito`! 🌯
 ```
 openapi_burrito/
 ├── cli.py              # CLI entry point (Typer)
-├── generator.py        # Main generation logic
-├── utils.py            # Shared utilities (snake_case, normalize_path)
-├── parser/
-│   ├── resolver.py     # Internal $ref resolution (ref → model name)
-│   ├── models.py       # Parsed data models (ParsedOperation, etc.)
-│   ├── operation.py    # Parser for paths/operations
-│   ├── sanitize.py     # Security-critical sanitization
-│   ├── schema.py       # Parser for component schemas
-│   └── types.py        # Type translation (OpenAPI → Python)
-└── templates/          # Jinja2 templates
-    ├── client.py.jinja2
-    ├── models.py.jinja2
-    └── ...
+├── generator.py        # generate(): load → parse → emit → write → format
+├── ir.py               # The intermediate representation (Api, Model, Operation, type expressions)
+├── runtime.py          # Response, UNSET/REQUIRED, middleware, prepare_request — vendored into every client
+├── spec/               # Frontend: OpenAPI document → ir.Api
+│   ├── load.py         # prance loading, Swagger 2 detection
+│   ├── resolver.py     # Internal $ref resolution
+│   ├── naming.py       # Identifiers, snake_case, collision renaming
+│   ├── types.py        # JSON Schema → type expression
+│   ├── schemas.py      # components/schemas → Model
+│   └── operations.py   # paths → Operation
+└── emit/               # Backend: ir.Api → source files
+    ├── python.py       # All Python spelling: types, literals, docstrings, views
+    └── templates/      # Jinja2 layout only
 ```
+
+Read [Architecture](07-architecture.md) before changing anything structural:
+it explains why the IR is a tree of values with symbolic references, and
+which concern lives where.
 
 ## Pull Requests
 

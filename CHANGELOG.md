@@ -4,7 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/) (0.x: minor bumps may break).
 
-## [0.2.0] - 2026-07-17
+## [0.2.0] - unreleased
+
+### Architecture
+
+The generator is now a small compiler with three parts, and a Python API
+of four verbs — see [docs/07-architecture.md](docs/07-architecture.md):
+
+```python
+from openapi_burrito import load, parse, emit, generate
+api = parse(load("openapi.yaml"))     # ir.Api: a tree of frozen values
+files = emit(api, modes=("async",))   # {"client.py": "...", ...}
+```
+
+- `ir.py`: the intermediate representation. Models are referenced by name;
+  the dependency graph is a query (`Api.dependencies()`), not pointers.
+- `spec/`: OpenAPI → IR. Knows nothing about Python.
+- `emit/`: IR → Python. The only place types, literals and docstrings are
+  spelled. Literals go through `repr()`; nothing is hand-escaped.
+- `runtime.py`: `Response`, the sentinels, middleware and request building
+  are a real, tested module, copied verbatim into every generated package as
+  `_runtime.py` (previously templated text, invisible to mypy and tests).
 
 ### Breaking
 
@@ -41,6 +61,11 @@ All notable changes to this project are documented here. The format follows
 - Generated code is post-formatted with ruff and passes `mypy --strict`
   (verified against the GitHub, Stripe, and converted Slack specs).
 - Clear error for Swagger 2.0 documents, pointing at `swagger2openapi`.
+- Operations carry `tags` and `operation_id` in the IR, so a client can be
+  filtered before emitting.
+- Error response unions include `bytes` for `application/octet-stream`
+  bodies (the runtime already returned them).
+- Path parameters are always required, whatever the spec says.
 
 ### Fixed
 
@@ -58,6 +83,13 @@ All notable changes to this project are documented here. The format follows
   silently discarded.
 - Malformed JSON responses fall back to raw bytes instead of raising.
 - `.yml` spec files accepted by `preview`.
+- A spec with `"components": null` (or any object replaced by a scalar)
+  no longer crashes; every structural read tolerates malformed nodes.
+- Enums with members that cannot be a `Literal` (floats, arrays, objects)
+  degrade to `Any` with a warning instead of emitting invalid typing.
+- `modes="sync"` (a bare string) is accepted instead of being iterated as
+  characters; the invalid-modes error no longer crashes on mixed types.
+- Long docstring tokens are never split inside an escape sequence.
 - The generated `pyproject.toml` uses the spec's real version and no longer
   depends on the unused `cattrs`.
 

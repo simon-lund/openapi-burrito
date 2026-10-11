@@ -145,28 +145,28 @@ make test
 
 ## Security
 
-This generator sanitizes identifiers and string literals to prevent code
-injection from malformed OpenAPI specs. However, **always review untrusted specs
-before generating**.
+Code generators turn untrusted input into code, so the design has to make
+injection impossible rather than filter it out. **Always review untrusted
+specs before generating** anyway.
 
-### Parser Safety Audit
+### How spec text reaches generated code
 
-All fields output by the parser are validated/sanitized:
+Nothing from the spec is concatenated into source as-is. Every value takes
+one of these paths:
 
-| Field                                 | Validation             | Notes                                 |
-| ------------------------------------- | ---------------------- | ------------------------------------- |
-| Model/param names                     | `sanitize(mode="id")`  | Converted to valid Python identifiers |
-| Model property keys                   | Identifier check / JSON-escape | Plain identifiers render in class syntax; everything else is JSON-escaped in functional `TypedDict` syntax (keys must match the wire format) |
-| Paths                                 | `sanitize(mode="str")` | String-escaped for literals           |
-| Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped (backslashes, control chars) |
-| `type` strings                        | Type translator        | Built from validated schema types     |
-| `method`                              | Allow-list             | Only known HTTP methods allowed       |
-| `in` (param location)                 | Enum check             | Only `path\|query\|header\|cookie`    |
-| `required`, `read_only`, `write_only` | `bool()` cast          | Forced to boolean                     |
-| `default`                             | `repr()`               | Python string representation          |
-| pyproject.toml metadata               | JSON-escape            | TOML-safe string literals             |
+| What                                  | How it is emitted                 | Guarantee                                              |
+| ------------------------------------- | --------------------------------- | ------------------------------------------------------ |
+| Model and argument names              | `spec.naming.identifier()`        | Valid, non-keyword identifier or generation fails      |
+| Model property keys                   | Verbatim in class syntax if a plain identifier, else `repr()` in functional `TypedDict` syntax | Keys match the wire format; never hand-escaped |
+| Paths, enum values, defaults, wire names | `repr()`                       | A Python literal that evaluates back to the exact value |
+| Descriptions/docs                     | `emit.python.docstring()`         | Backslashes, triple quotes and control chars escaped; property-tested for every string |
+| Types                                 | Rendered from the IR by `match`   | Only known constructors; unknown schemas become `Any`  |
+| `method`, parameter `in`              | `ir.Method` / `ir.Location` enums | Unknown values are skipped with a warning              |
+| `required`, `readOnly`, `writeOnly`   | `bool()` cast                     | Forced to boolean                                      |
+| The runtime (`Response`, `UNSET`, …)  | Copied verbatim from `runtime.py` | Never templated; type-checked and tested in this repo  |
+| pyproject.toml metadata               | JSON-escape                       | TOML-safe string literals                              |
 
-Additionally, every generated `.py` file must pass `compile()` and the
+As defense in depth, every emitted `.py` file must pass `compile()` and the
 `pyproject.toml` must parse as TOML before anything is written to disk —
 malformed output aborts generation instead of landing in your project.
 
@@ -196,6 +196,7 @@ for an example of this vulnerability class in other generators.
 | [Type System](https://github.com/simon-lund/openapi-burrito/blob/main/docs/04-type-system.md)       | `UNSET`, `Unknown`, `NotRequired`, limitations |
 | [CLI Reference](https://github.com/simon-lund/openapi-burrito/blob/main/docs/05-cli-reference.md)   | `generate` and `preview` commands              |
 | [Contributing](https://github.com/simon-lund/openapi-burrito/blob/main/docs/06-contributing.md)     | Development setup and guidelines               |
+| [Architecture](https://github.com/simon-lund/openapi-burrito/blob/main/docs/07-architecture.md)     | `load` → `parse` → `emit`, the IR, tree vs graph |
 
 ## Examples
 
