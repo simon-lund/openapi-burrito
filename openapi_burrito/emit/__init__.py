@@ -25,8 +25,10 @@ from jinja2 import Environment, FileSystemLoader
 
 from .. import ir, runtime
 
-type Mode = Literal["async", "sync"]
-MODES: tuple[Mode, ...] = get_args(Mode.__value__)
+Mode = Literal["async", "sync"]
+"""Client flavors. The one definition: emit validates against it, the CLI
+offers it as choices."""
+MODES: tuple[Mode, ...] = get_args(Mode)
 DEFAULT_MODES: tuple[Mode, ...] = ("async",)
 
 TEMPLATES = Path(__file__).parent / "templates"
@@ -176,7 +178,8 @@ class OperationView:
     response: str
     doc: str
     locations: dict[str, dict[str, str]]
-    """``{location: {python name: wire name}}``, empty locations omitted."""
+    """``{location: {python name: wire name}}``, empty locations omitted. Path
+    names map to themselves: the path template already uses the Python names."""
 
 
 def model_view(model: ir.Model, pending: frozenset[str]) -> ModelView:
@@ -226,7 +229,13 @@ def operation_view(op: ir.Operation) -> OperationView:
         locations={
             loc.value: names
             for loc in ir.Location
-            if (names := {p.name: p.api_name for p in op.params if p.location is loc})
+            if (
+                names := {
+                    p.name: p.name if loc is ir.Location.PATH else p.api_name
+                    for p in op.params
+                    if p.location is loc
+                }
+            )
         },
     )
 

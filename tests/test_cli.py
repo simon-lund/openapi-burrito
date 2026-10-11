@@ -1,7 +1,9 @@
 """The CLI, driven through typer's test runner."""
 
+import sys
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from openapi_burrito.cli import app
@@ -51,3 +53,18 @@ class TestGenerate:
         assert result.exit_code == 1
         assert "Error" in result.output
         assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+class TestPreview:
+    def test_missing_extra_gives_install_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without the 'preview' extra the command explains how to install it —
+        and importing the module itself must not be what fails."""
+        import openapi_burrito.preview  # noqa: F401 - importable without the extra
+
+        monkeypatch.setitem(sys.modules, "fastapi", None)  # makes `import fastapi` fail
+        result = runner.invoke(app, ["preview", str(PETSTORE)])
+        assert result.exit_code == 1
+        assert "Preview dependencies missing" in result.output
+        assert "openapi-burrito[preview]" in result.output

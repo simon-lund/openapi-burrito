@@ -105,6 +105,8 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
 - Long docstring tokens are never split inside an escape sequence.
 - The post-format ruff run no longer leaves a `.ruff_cache/` inside the
   generated package.
+- `openapi_burrito.preview` imports without the `preview` extra; the
+  install hint appears when the command runs, not when the module loads.
 - Non-finite float defaults (`.inf` in YAML) render as `float("inf")`
   instead of the string `"inf"`.
 - The generated `pyproject.toml` uses the spec's real version and no longer

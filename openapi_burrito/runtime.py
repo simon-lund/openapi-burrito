@@ -268,9 +268,10 @@ class ResponseError(Exception):
 
 type Locations = Mapping[str, Mapping[str, str]]
 """
-Where each Python argument of one operation goes on the wire:
-``{"query": {"python_name": "apiName", ...}, "header": {...}, ...}``.
-Path arguments map to themselves (the path template uses the Python names).
+Where each Python argument of one operation goes on the wire, per location:
+``{"path": {...}, "query": {"python_name": "apiName", ...}, "header": {...},
+"cookie": {...}}``. Path arguments map to themselves, since the path template
+already uses the Python names. Locations without arguments may be omitted.
 """
 
 _PATH_PLACEHOLDER = re.compile(r"\{([^}]+)\}")
@@ -301,57 +302,55 @@ def prepare_request(
     for name, value in params.items():
         if isinstance(value, RequiredType):
             raise TypeError(f"Missing required parameter: {name}")
-
     # Drop UNSET; keep None (it is JSON null)
     given = {k: v for k, v in params.items() if not isinstance(v, UnsetType)}
 
-    path_vals: dict[str, Any] = {}
-    query_vals: dict[str, Any] = {}
-    header_vals: dict[str, Any] = {}
-    cookie_vals: dict[str, Any] = {}
-
     if locations is None:
-        placeholders = set(_PATH_PLACEHOLDER.findall(path))
-        for name, value in given.items():
-            (path_vals if name in placeholders else query_vals)[name] = value
-    else:
-        path_map = locations.get("path", {})
-        query_map = locations.get("query", {})
-        header_map = locations.get("header", {})
-        cookie_map = locations.get("cookie", {})
+        locations = _escape_hatch(path, given)
 
-        unknown = []
-        for name, value in given.items():
-            if name in path_map:
-                path_vals[name] = value
-            elif name in query_map:
-                query_vals[query_map[name]] = value
-            elif name in header_map:
-                header_vals[header_map[name]] = value
-            elif name in cookie_map:
-                cookie_vals[cookie_map[name]] = value
-            else:
-                unknown.append(name)
-
-        if unknown:
-            raise TypeError(
-                f"Unknown parameter(s) {unknown!r} for {method} {path}. "
-                "Request bodies use the json/data/files/content arguments."
-            )
+    routed: dict[str, dict[str, Any]] = {
+        "path": {},
+        "query": {},
+        "header": {},
+        "cookie": {},
+    }
+    unknown = []
+    for name, value in given.items():
+        for location, names in locations.items():
+            if name in names:
+                routed[location][names[name]] = value
+                break
+        else:
+            unknown.append(name)
+    if unknown:
+        raise TypeError(
+            f"Unknown parameter(s) {unknown!r} for {method} {path}. "
+            "Request bodies use the json/data/files/content arguments."
+        )
 
     try:
-        formatted_path = path.format(**path_vals)
+        url = path.format(**routed["path"])
     except KeyError as e:
         raise TypeError(f"Missing required path parameter: {e}") from e
 
     return client.build_request(
         method,
-        formatted_path,
+        url,
         json=json,
         data=data,
         files=files,
         content=content,
-        params=query_vals,
-        headers=header_vals,
-        cookies=cookie_vals,
+        params=routed["query"],
+        headers=routed["header"],
+        cookies=routed["cookie"],
     )
+
+
+def _escape_hatch(path: str, given: Mapping[str, Any]) -> Locations:
+    """A location map for a path the spec does not know: whatever fills a
+    placeholder is a path argument, everything else goes to the query."""
+    placeholders = set(_PATH_PLACEHOLDER.findall(path))
+    return {
+        "path": {name: name for name in given if name in placeholders},
+        "query": {name: name for name in given if name not in placeholders},
+    }

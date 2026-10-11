@@ -19,7 +19,7 @@ from ._runtime import (
 from .models import *
 
 # Maps Python argument names (snake_case, collision suffixes) back to the
-# original parameter names the API expects.
+# original parameter names the API expects; path names map to themselves.
 {#- Empty locations are omitted: the runtime reads them with .get(loc, {}).
     Operations without parameters still get an (empty) entry, since a fully
     absent key means "path not in the spec" and takes the escape hatch. #}

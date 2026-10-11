@@ -1,6 +1,7 @@
 import logging
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
+from typing import cast
 
 import typer
 from rich.console import Console
@@ -8,18 +9,12 @@ from rich.logging import RichHandler
 from rich.panel import Panel
 
 from . import generator
-from .emit import MODES
+from .emit import DEFAULT_MODES, MODES
+from .emit import Mode as ModeLiteral
 
-
-class Mode(str, Enum):
-    """Client flavor to generate. Typer needs an Enum; emit.MODES is the truth."""
-
-    async_ = "async"
-    sync = "sync"
-
-
-assert {m.value for m in Mode} == set(MODES)
-
+# Typer needs an Enum for a repeatable choice option; derive it from the one
+# definition in emit instead of spelling the choices a second time.
+Mode = StrEnum("Mode", MODES)  # type: ignore[misc]
 
 console = Console()
 
@@ -85,7 +80,7 @@ def generate(
         writable=True,
     ),
     client: list[Mode] = typer.Option(
-        [Mode.async_],
+        [Mode(m) for m in DEFAULT_MODES],
         "--client",
         "-c",
         help="Client flavor(s) to generate: async (AsyncClient, default) "
@@ -115,7 +110,9 @@ def generate(
     typer.echo(f"  - Output: {output_dir}")
 
     try:
-        generator.generate(spec_source, output_dir, modes={m.value for m in client})
+        # typer validated the values against the enum derived from MODES
+        modes = cast(list[ModeLiteral], [m.value for m in client])
+        generator.generate(spec_source, output_dir, modes=modes)
         console.print(
             f"\n:sparkles: Successfully generated client in {output_dir}",
             style="bold green",
