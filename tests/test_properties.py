@@ -13,19 +13,24 @@ finite list of examples can suggest but never state. These properties state it.
 
 import ast
 import keyword
+import math
 
 from hypothesis import given
 from hypothesis import strategies as st
 
 from openapi_burrito import ir
-from openapi_burrito.emit.python import docstring, literal, render_type
+from openapi_burrito.emit import docstring, literal, render_type
 from openapi_burrito.spec import naming
 from openapi_burrito.spec.resolver import RefResolver
 from openapi_burrito.spec.types import type_expr
 
 # JSON-representable values, as they may appear in enums/defaults
 json_values = st.recursive(
-    st.none() | st.booleans() | st.integers() | st.floats(allow_nan=False) | st.text(),
+    st.none()
+    | st.booleans()
+    | st.integers()
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.text(),
     lambda children: st.lists(children, max_size=3)
     | st.dictionaries(st.text(max_size=10), children, max_size=3),
     max_leaves=5,
@@ -66,6 +71,12 @@ class TestSpellingProperties:
         corruption, for ANY JSON value.
         """
         assert ast.literal_eval(literal(value)) == value
+
+    @given(st.sampled_from([float("inf"), float("-inf")]))
+    def test_non_finite_floats_render_as_expressions(self, value: float) -> None:
+        """YAML can carry .inf; Python has no literal for it, only float('inf')."""
+        assert eval(literal(value)) == value
+        assert math.isnan(eval(literal(float("nan"))))
 
     @given(st.text())
     def test_docstring_never_breaks_out(self, s: str) -> None:

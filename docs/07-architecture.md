@@ -121,11 +121,14 @@ same one JSON Schema makes (`$ref` is a name; the document is a tree).
 from many places. In the IR it becomes equal values in many places. Nothing
 downstream needs to know they were once the same object.
 
-When would the graph actually be needed? Reachability (prune unused models,
-split a client by tag), cycle detection, topological ordering. The first is
-a one-liner over `dependencies()`; the last two are not needed at all for
-TypedDict output under `from __future__ import annotations`. So: tree of
-values, symbolic refs, graph on demand.
+When is the graph actually needed? Reachability (prune unused models, split
+a client by tag) is a one-liner over `dependencies()`. Ordering is used today:
+`api.dependency_order()` emits models dependencies-first, so functional-syntax
+TypedDicts — which are *calls*, evaluated at import — can use real
+annotations instead of quoted forward references; only a reference that
+closes a genuine cycle (`Tree → Tree`) is still spelled as a string.
+Class-syntax models never cared, thanks to `from __future__ import
+annotations`. So: tree of values, symbolic refs, graph on demand.
 
 ## Where each concern lives
 

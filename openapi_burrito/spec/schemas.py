@@ -71,14 +71,16 @@ def flatten(
 
 
 def _field(name: str, schema: Any, required: bool, resolver: RefResolver) -> ir.Field:
-    # Metadata (description, default, ...) lives on the resolved schema when
-    # the property is a $ref
+    # default/readOnly/writeOnly live on the resolved schema when the property
+    # is a $ref. A description beside the $ref (OpenAPI 3.1) describes the
+    # property itself and wins over the referenced model's.
     resolved = as_dict(resolver.deref(schema))
+    own = as_dict(schema)
     return ir.Field(
         name=name,
         type=type_expr(schema, resolver),
         required=required,
-        doc=as_text(resolved.get("description")),
+        doc=as_text(own.get("description")) or as_text(resolved.get("description")),
         default=ir.Default(resolved["default"]) if "default" in resolved else None,
         read_only=bool(resolved.get("readOnly", False)),
         write_only=bool(resolved.get("writeOnly", False)),

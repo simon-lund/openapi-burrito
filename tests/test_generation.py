@@ -308,6 +308,23 @@ class TestModels:
         annotations = edge.models.Admin.__annotations__
         assert {"message", "level"} <= set(annotations)
 
+    def test_functional_models_get_real_annotations(self, edge: ModuleType) -> None:
+        """
+        Functional TypedDicts are calls, evaluated at import — so models are
+        emitted dependencies-first and only cycle-closing refs stay strings.
+        """
+        from typing import NotRequired
+
+        src = (source_dir(edge) / "models.py").read_text()
+        # Account (first in the spec) references User (later): User is emitted first
+        assert src.index("User = TypedDict(") < src.index("Account = TypedDict(")
+        assert '"NotRequired[User]"' not in src  # a real annotation, not a string
+        annotations = edge.models.Account.__annotations__
+        assert annotations["owner"] == NotRequired[edge.models.User]
+        # Folder references itself: that one field is a forward-reference string
+        assert '"children": "NotRequired[list[Folder]]"' in src
+        assert '"folder-name": NotRequired[str]' in src
+
     def test_ref_response_types_use_model_name(self, edge: ModuleType) -> None:
         client_src = (source_dir(edge) / "client.py").read_text()
         # $ref'd parameter and response resolve to the page param + User model

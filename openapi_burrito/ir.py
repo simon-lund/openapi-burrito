@@ -298,3 +298,26 @@ class Api:
     def dependencies(self) -> dict[str, frozenset[str]]:
         """The model reference graph: ``{model: models it references}``."""
         return {m.name: m.refs() for m in self.models}
+
+    def dependency_order(self) -> tuple[Model, ...]:
+        """
+        Models with their dependencies first; spec order breaks ties.
+
+        A cycle (``Tree → Tree``, ``User ↔ Pet``) cannot be ordered: its
+        members keep spec order, and whoever consumes this must treat a
+        reference to a later model as a forward reference.
+        """
+        names = {m.name for m in self.models}
+        deps = {m.name: (m.refs() & names) - {m.name} for m in self.models}
+        pending = list(self.models)
+        done: set[str] = set()
+        ordered: list[Model] = []
+        while pending:
+            ready = next(
+                (m for m in pending if deps[m.name] <= done),
+                pending[0],  # cycle: break it at the earliest model in spec order
+            )
+            pending.remove(ready)
+            done.add(ready.name)
+            ordered.append(ready)
+        return tuple(ordered)

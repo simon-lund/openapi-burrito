@@ -126,6 +126,27 @@ class TestRefs:
         with pytest.raises(KeyError):
             api.model("Nope")
 
+    def test_dependency_order(self) -> None:
+        def model(name: str, *refs: str) -> Model:
+            return Model(name, tuple(Field(r, Ref(r), required=True) for r in refs))
+
+        api = Api(
+            title="t",
+            version="1",
+            description="",
+            models=(
+                model("A", "B"),
+                model("B", "C"),
+                model("C"),
+                model("D", "E"),  # D <-> E is a cycle: broken only once nothing
+                model("E", "D", "E"),  # else is ready, then in spec order
+                model("F", "Missing"),  # dangling refs are ignored: F is ready
+            ),
+            operations=(),
+        )
+        order = [m.name for m in api.dependency_order()]
+        assert order == ["C", "B", "A", "F", "D", "E"]
+
 
 class TestOperation:
     def test_success_and_error_are_derived_unions(self) -> None:

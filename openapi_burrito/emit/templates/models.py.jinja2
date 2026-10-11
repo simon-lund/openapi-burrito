@@ -5,14 +5,16 @@ from typing import Any, Literal, Never, NotRequired, TypedDict
 {% for model in models %}
 
 {% if model.functional %}
-{#- Functional syntax: a wire key is not a plain identifier. Value types are
-    quoted so forward references to models defined later still work. #}
+{#- Functional syntax: a wire key is not a plain identifier. Models are emitted
+    dependencies-first; only references that close a cycle arrive quoted. #}
 {{ model.name }} = TypedDict(
     {{ model.name | py }},
     {
     {%- for field in model.fields %}
-        {{ field.name | py }}: {{ field.annotation | py }},
-        {%- if field.doc %}  # {{ field.doc | replace("\n", " ") | truncate(90) }}{% endif %}
+        {%- if field.doc %}
+        # {{ field.doc | replace("\n", " ") | truncate(80) }}
+        {%- endif %}
+        {{ field.name | py }}: {{ field.annotation }},
     {%- endfor %}
     },
 )
