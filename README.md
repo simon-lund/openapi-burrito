@@ -6,7 +6,7 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/simon-lund/openapi-burrito/main/docs/static/logo.png" alt="openapi-burrito logo" width="128" />
+<img src="https://raw.githubusercontent.com/simon-lund/openapi-burrito/main/docs/static/logo.png" alt="openapi-burrito logo" width="100" />
 
 # openapi-burrito
 
