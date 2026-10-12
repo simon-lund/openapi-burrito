@@ -159,7 +159,7 @@ one of these paths:
 | Model and argument names              | `spec.naming.identifier()`        | Valid, non-keyword identifier or generation fails      |
 | Model property keys                   | Verbatim in class syntax if a plain identifier, else `repr()` in functional `TypedDict` syntax | Keys match the wire format; never hand-escaped |
 | Paths, enum values, defaults, wire names | `repr()`                       | A Python literal that evaluates back to the exact value |
-| Descriptions/docs                     | `emit.python.docstring()`         | Backslashes, triple quotes and control chars escaped; property-tested for every string |
+| Descriptions/docs                     | `emit.docstring()`         | Backslashes, triple quotes and control chars escaped; property-tested for every string |
 | Types                                 | Rendered from the IR by `match`   | Only known constructors; unknown schemas become `Any`  |
 | `method`, parameter `in`              | `ir.Method` / `ir.Location` enums | Unknown values are skipped with a warning              |
 | `required`, `readOnly`, `writeOnly`   | `bool()` cast                     | Forced to boolean                                      |
