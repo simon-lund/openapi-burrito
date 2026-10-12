@@ -2,9 +2,9 @@
 End-to-end generation tests: generate real clients from fixture specs, import
 them, and drive them through httpx.MockTransport.
 
-These pin the contract between the parser, the templates, and the generated
-runtime — template drift (e.g. a constructor changing in models.py.jinja2 but
-not client.py.jinja2) fails here instead of in users' projects.
+These pin the contract between the emitter's templates and the vendored
+runtime end to end — a template calling the runtime wrongly fails here instead
+of in users' projects.
 """
 
 import asyncio
@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 import pytest
+
+from openapi_burrito import GenerationError, generate
 
 
 def source_dir(module: ModuleType) -> Path:
@@ -306,6 +308,23 @@ class TestModels:
         annotations = edge.models.Admin.__annotations__
         assert {"message", "level"} <= set(annotations)
 
+    def test_functional_models_get_real_annotations(self, edge: ModuleType) -> None:
+        """
+        Functional TypedDicts are calls, evaluated at import — so models are
+        emitted dependencies-first and only cycle-closing refs stay strings.
+        """
+        from typing import NotRequired
+
+        src = (source_dir(edge) / "models.py").read_text()
+        # Account (first in the spec) references User (later): User is emitted first
+        assert src.index("User = TypedDict(") < src.index("Account = TypedDict(")
+        assert '"NotRequired[User]"' not in src  # a real annotation, not a string
+        annotations = edge.models.Account.__annotations__
+        assert annotations["owner"] == NotRequired[edge.models.User]
+        # Folder references itself: that one field is a forward-reference string
+        assert '"children": "NotRequired[list[Folder]]"' in src
+        assert '"folder-name": NotRequired[str]' in src
+
     def test_ref_response_types_use_model_name(self, edge: ModuleType) -> None:
         client_src = (source_dir(edge) / "client.py").read_text()
         # $ref'd parameter and response resolve to the page param + User model
@@ -319,22 +338,28 @@ class TestModels:
 
 
 class TestClientModes:
-    """--client async|sync|both controls what is emitted, never what a name means."""
+    """--client controls what is emitted, never what a name means."""
 
     @pytest.mark.parametrize(
-        ("mode", "expect_sync", "expect_async"),
-        [("async", False, True), ("sync", True, False), ("both", True, True)],
+        ("modes", "expect_sync", "expect_async"),
+        [
+            (("async",), False, True),
+            (("sync",), True, False),
+            (("async", "sync"), True, True),
+        ],
     )
-    def test_mode_controls_emitted_classes(
-        self, tmp_path: Path, mode: str, expect_sync: bool, expect_async: bool
+    def test_modes_control_emitted_classes(
+        self,
+        tmp_path: Path,
+        modes: tuple[str, ...],
+        expect_sync: bool,
+        expect_async: bool,
     ) -> None:
-        from openapi_burrito.generator import generate_sdk
-
-        out = tmp_path / f"client_{mode}"
-        generate_sdk(
+        out = tmp_path / f"client_{'_'.join(modes)}"
+        generate(
             Path(__file__).parent / "fixtures" / "petstore.json",
             out,
-            client_mode=mode,  # type: ignore[arg-type]
+            modes=modes,  # type: ignore[arg-type]
         )
         client_src = (out / "client.py").read_text()
         init_src = (out / "__init__.py").read_text()
@@ -344,11 +369,28 @@ class TestClientModes:
         assert ('"Client"' in init_src) is expect_sync
         assert ('"AsyncClient"' in init_src) is expect_async
 
-    def test_default_mode_is_async(self, tmp_path: Path) -> None:
-        from openapi_burrito.generator import generate_sdk
+    def test_invalid_modes_rejected(self, tmp_path: Path) -> None:
+        spec = Path(__file__).parent / "fixtures" / "petstore.json"
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            generate(spec, tmp_path / "x", modes=())
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            generate(spec, tmp_path / "y", modes=("both",))  # type: ignore[arg-type]
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            # A bare string must not be iterated as characters
+            generate(spec, tmp_path / "z", modes="both")  # type: ignore[arg-type]
+        with pytest.raises(GenerationError, match="Invalid client modes"):
+            # The error path itself must not crash on unorderable input
+            generate(spec, tmp_path / "w", modes=("async", 3))  # type: ignore[arg-type]
 
+    def test_bare_string_mode_is_accepted(self, tmp_path: Path) -> None:
+        spec = Path(__file__).parent / "fixtures" / "petstore.json"
+        out = tmp_path / "client_sync"
+        generate(spec, out, modes="sync")  # type: ignore[arg-type]
+        assert "class Client:" in (out / "client.py").read_text()
+
+    def test_default_mode_is_async(self, tmp_path: Path) -> None:
         out = tmp_path / "client_default"
-        generate_sdk(Path(__file__).parent / "fixtures" / "petstore.json", out)
+        generate(Path(__file__).parent / "fixtures" / "petstore.json", out)
         client_src = (out / "client.py").read_text()
         assert "class AsyncClient:" in client_src
         assert "class Client:" not in client_src

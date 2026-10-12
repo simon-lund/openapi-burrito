@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from typing import Any, Literal, Never, NotRequired, TypedDict
+
+{% for model in models %}
+
+{% if model.functional %}
+{#- Functional syntax: a wire key is not a plain identifier. Models are emitted
+    dependencies-first; only references that close a cycle arrive quoted. #}
+{{ model.name }} = TypedDict(
+    {{ model.name | py }},
+    {
+    {%- for field in model.fields %}
+        {%- if field.doc %}
+        # {{ field.doc | replace("\n", " ") | truncate(80) }}
+        {%- endif %}
+        {{ field.name | py }}: {{ field.annotation }},
+    {%- endfor %}
+    },
+)
+{%- if model.doc %}
+"""
+{{ model.doc }}
+"""
+{%- endif %}
+{% else %}
+class {{ model.name }}(TypedDict):
+{%- if model.doc %}
+    """
+    {{ model.doc | indent(4) }}
+    """
+    {%- endif %}
+    {%- for field in model.fields %}
+    {{ field.name }}: {{ field.annotation }}
+    {%- if field.doc %}
+    """
+    {{ field.doc | indent(4) }}
+    """
+    {%- endif %}
+    {%- endfor %}
+    {%- if not model.fields and not model.doc %}
+    pass
+    {%- endif %}
+{% endif %}
+{% endfor %}

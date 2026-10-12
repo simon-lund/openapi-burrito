@@ -1,15 +1,43 @@
+"""
+Runtime support for generated clients.
+
+This module is copied verbatim into every generated package as ``_runtime.py``.
+It is the reason generated clients have no dependency on openapi-burrito: the
+runtime is vendored, not templated. Everything here must therefore be
+self-contained (stdlib + httpx only) and must not import from the generator.
+"""
+
 from __future__ import annotations
 
 import fnmatch
 import json
-
-from collections.abc import Awaitable
+import re
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any, Final, Callable, Literal, Never, NotRequired, TypedDict, cast
+from typing import Annotated, Any, Final, cast
 
 import httpx
 
-# Type wrappers for parameter locations
+__all__ = [
+    "REQUIRED",
+    "UNSET",
+    "AsyncHandlerT",
+    "AsyncMiddlewareT",
+    "Cookie",
+    "HandlerT",
+    "Header",
+    "MiddlewareT",
+    "Path",
+    "Query",
+    "RequiredType",
+    "Response",
+    "ResponseError",
+    "UnsetType",
+]
+
+# Type wrappers for parameter locations. They are documentation in the
+# generated signatures (so a reader can tell a header from a query param);
+# routing is done by the client's _PARAM_MAP, not by these annotations.
 type Query[T] = Annotated[T, "query"]
 """Query parameter type wrapper."""
 type Header[T] = Annotated[T, "header"]
@@ -28,31 +56,35 @@ type MiddlewareT = Callable[[httpx.Request, HandlerT], httpx.Response]
 type AsyncHandlerT = Callable[[httpx.Request], Awaitable[httpx.Response]]
 """Async handler that turns a request into a response (innermost: actual send)."""
 
-type AsyncMiddlewareT = Callable[[httpx.Request, AsyncHandlerT], Awaitable[httpx.Response]]
+type AsyncMiddlewareT = Callable[
+    [httpx.Request, AsyncHandlerT], Awaitable[httpx.Response]
+]
 """Async middleware function type alias: async (request, call_next) -> response."""
+
 
 class UnsetType:
     """
-    A sentinel value to represent unset parameters.
+    Sentinel type for parameters that were not passed at all.
 
-    Used to differentiate between an explicit `None` (JSON null) and a
-    parameter that was omitted from the request.
-
-    Any UNSET parameter will be omitted from the serialized request.
+    None cannot play this role: None is JSON null, a value a caller may
+    legitimately want to send. UNSET means "omit this parameter from the
+    request entirely".
     """
+
     def __repr__(self) -> str:
         return "UNSET"
 
 
 class RequiredType:
     """
-    A sentinel value to represent required parameters.
+    Sentinel type for required parameters.
 
-    Used to explicitly mark parameters as required in function signatures.
-
-    Any REQUIRED parameter must be provided by the caller,
-    or a TypeError will be raised.
+    Signatures are ordered by location (path, body, query, header, cookie),
+    so a required parameter can follow an optional one. Python only allows
+    that if it has a default; REQUIRED is that placeholder. If it is still
+    present when the request is built, a TypeError is raised.
     """
+
     def __repr__(self) -> str:
         return "REQUIRED"
 
@@ -61,7 +93,7 @@ class RequiredType:
 # default for any type hint, keeping the function signatures clean.
 UNSET: Final[Any] = cast(Any, UnsetType())
 """
-The sentinel instance used for optional parameters.
+Sentinel default for optional parameters. See UnsetType.
 
 Example:
     >>> def foo(a: str | None = UNSET):
@@ -69,7 +101,7 @@ Example:
     ...         return "a is unset"
     ...     return f"set to {a}"
     >>> foo()
-    'unset'
+    'a is unset'
     >>> foo("5")
     'set to 5'
     >>> foo(None)
@@ -78,7 +110,7 @@ Example:
 
 REQUIRED: Final[Any] = cast(Any, RequiredType())
 """
-The sentinel instance used for required parameters.
+Sentinel default for required parameters. See RequiredType.
 
 Example:
     >>> def foo(a: str = REQUIRED):
@@ -92,12 +124,13 @@ Example:
 
 
 @dataclass
-class Response[T,E]:
+class Response[T, E]:
     """
     A transparent, typed proxy for httpx.Response.
     Delegates all standard attributes to httpx while providing
     auto-parsing for JSON and NDJSON formats.
     """
+
     _response: httpx.Response
 
     def __getattr__(self, name: str) -> Any:
@@ -191,18 +224,18 @@ class Response[T,E]:
         if not self._response.content:
             return None
 
-        # Isolate MIME type (ignore charset)
+        # Ignore charset etc. after the semicolon
         ctype = self.headers.get("content-type", "").lower().split(";")[0]
 
-        # Identify the JSON flavor
-        is_standard_json = ctype == "application/json" or fnmatch.fnmatch(ctype, "*+json")
+        is_standard_json = ctype == "application/json" or fnmatch.fnmatch(
+            ctype, "*+json"
+        )
         is_ndjson = any(sub in ctype for sub in ["ndjson", "jsonl", "json-seq"])
 
         try:
             if is_standard_json:
                 return self._response.json()
 
-            # Return list of dicts for newline-delimited (nd) streams
             if is_ndjson:
                 return [
                     json.loads(line)
@@ -233,51 +266,91 @@ class ResponseError(Exception):
         self.response: Response[Any, Any] = response
 
 
-# -------------------------------------------------------------------------
-# Generated models
-# -------------------------------------------------------------------------
-
-{% for model in models %}
-
-{% if model.functional %}
-{#- Functional syntax: used when a wire key is not a plain Python identifier.
-    Keys are JSON-escaped verbatim wire names; value types are quoted so
-    forward references to models defined later still work. #}
-{{ model.name }} = TypedDict(
-    "{{ model.name }}",
-    {
-    {%- for prop in model.properties %}
-        {{ prop.name | tojson }}: {{ prop.type | tojson }},
-        {%- if prop.doc %}  # {{ prop.doc | replace("\r", " ") | replace("\n", " ") | truncate(90) }}{% endif %}
-    {%- endfor %}
-    },
-)
-{%- if model.doc %}
+type Locations = Mapping[str, Mapping[str, str]]
 """
-{{ model.doc | indent(0) }}
+Where each Python argument of one operation goes on the wire, per location:
+``{"path": {...}, "query": {"python_name": "apiName", ...}, "header": {...},
+"cookie": {...}}``. Path arguments map to themselves, since the path template
+already uses the Python names. Locations without arguments may be omitted.
 """
-{%- endif %}
-{% else %}
-class {{ model.name }}(TypedDict):
-{%- if model.doc %}
-    """
-    {{ model.doc | indent(4) }}
-    """
-    {%- endif %}
-    {%- for prop in model.properties %}
-    {{ prop.name }}: {{ prop.type }}
-    """
-    {%- if prop.doc %}{{ prop.doc }}{% endif %}
-    {%- if prop.default is not none %}
-    Server Default: {{ prop.default }}
-    {%- endif %}
-    {%- if prop.read_only %} [Read Only - Server generated]{% endif %}
-    {%- if prop.write_only %} [Write Only - Only used in requests]{% endif %}
-    """
-    {%- endfor %}
-    {%- if not model.properties %}
-    pass
 
-{%- endif %}
-{% endif %}
-{% endfor %}
+_PATH_PLACEHOLDER = re.compile(r"\{([^}]+)\}")
+
+
+def prepare_request(
+    client: httpx.Client | httpx.AsyncClient,
+    method: str,
+    path: str,
+    *,
+    json: Any = None,
+    data: Any = None,
+    files: Any = None,
+    content: Any = None,
+    params: Mapping[str, Any],
+    locations: Locations | None,
+) -> httpx.Request:
+    """
+    Validates keyword arguments, routes them to their wire locations, and
+    builds the httpx request.
+
+    :param params: The keyword arguments the caller passed (may contain the
+        UNSET / REQUIRED sentinels).
+    :param locations: The operation's location map, or None if the path is
+        not in the spec — then placeholders in ``path`` are filled from
+        ``params`` and everything else is sent as query parameters.
+    """
+    for name, value in params.items():
+        if isinstance(value, RequiredType):
+            raise TypeError(f"Missing required parameter: {name}")
+    # Drop UNSET; keep None (it is JSON null)
+    given = {k: v for k, v in params.items() if not isinstance(v, UnsetType)}
+
+    if locations is None:
+        locations = _escape_hatch(path, given)
+
+    routed: dict[str, dict[str, Any]] = {
+        "path": {},
+        "query": {},
+        "header": {},
+        "cookie": {},
+    }
+    unknown = []
+    for name, value in given.items():
+        for location, names in locations.items():
+            if name in names:
+                routed[location][names[name]] = value
+                break
+        else:
+            unknown.append(name)
+    if unknown:
+        raise TypeError(
+            f"Unknown parameter(s) {unknown!r} for {method} {path}. "
+            "Request bodies use the json/data/files/content arguments."
+        )
+
+    try:
+        url = path.format(**routed["path"])
+    except KeyError as e:
+        raise TypeError(f"Missing required path parameter: {e}") from e
+
+    return client.build_request(
+        method,
+        url,
+        json=json,
+        data=data,
+        files=files,
+        content=content,
+        params=routed["query"],
+        headers=routed["header"],
+        cookies=routed["cookie"],
+    )
+
+
+def _escape_hatch(path: str, given: Mapping[str, Any]) -> Locations:
+    """A location map for a path the spec does not know: whatever fills a
+    placeholder is a path argument, everything else goes to the query."""
+    placeholders = set(_PATH_PLACEHOLDER.findall(path))
+    return {
+        "path": {name: name for name in given if name in placeholders},
+        "query": {name: name for name in given if name not in placeholders},
+    }

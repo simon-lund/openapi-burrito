@@ -134,6 +134,15 @@
       }
     },
     "schemas": {
+      "Account": {
+        "type": "object",
+        "description": "Functional syntax referencing a model defined later in the spec",
+        "required": ["account-id"],
+        "properties": {
+          "account-id": { "type": "string" },
+          "owner": { "$ref": "#/components/schemas/User" }
+        }
+      },
       "User": {
         "type": "object",
         "required": ["id", "type"],
@@ -173,6 +182,18 @@
             "required": ["level"]
           }
         ]
+      },
+      "Folder": {
+        "type": "object",
+        "description": "Functional syntax with a self-reference (cannot be ordered)",
+        "properties": {
+          "folder-name": { "type": "string" },
+          "children": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Folder" }
+          },
+          "owner": { "$ref": "#/components/schemas/User" }
+        }
       }
     }
   }

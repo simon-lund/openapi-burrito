@@ -26,8 +26,8 @@ async def logging_middleware(request, call_next):
     return response
 ```
 
-> The sync `Client` (`--client sync`) works exactly the same — just drop the
-> `async` and `await` keywords.
+> With `--client sync` the API is identical minus the `async` and `await`
+> keywords.
 
 ## Middleware with Timing
 

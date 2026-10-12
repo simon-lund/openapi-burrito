@@ -15,5 +15,14 @@ wheels/
 
 # Ignore generated clients in the examples directory
 examples/*/client/
-# Test artifacts
+# Tool caches and test artifacts
 .coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Personal planning file, stays local
+.todo

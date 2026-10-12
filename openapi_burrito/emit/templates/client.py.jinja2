@@ -1,0 +1,198 @@
+from typing import Any, Literal, overload
+
+import httpx
+
+from ._runtime import (
+    AsyncHandlerT,
+    AsyncMiddlewareT,
+    Cookie,
+    HandlerT,
+    Header,
+    MiddlewareT,
+    Path,
+    Query,
+    REQUIRED,
+    Response,
+    UNSET,
+    prepare_request,
+)
+from .models import *
+
+# Maps Python argument names (snake_case, collision suffixes) back to the
+# original parameter names the API expects; path names map to themselves.
+{#- Empty locations are omitted: the runtime reads them with .get(loc, {}).
+    Operations without parameters still get an (empty) entry, since a fully
+    absent key means "path not in the spec" and takes the escape hatch. #}
+_PARAM_MAP: dict[tuple[str, str], dict[str, dict[str, str]]] = {
+    {%- for op in operations %}
+    ({{ op.method | py }}, {{ op.path | py }}): {
+        {%- for location, names in op.locations.items() %}
+        {{ location | py }}: {
+            {%- for name, api_name in names.items() %}{{ name | py }}: {{ api_name | py }},{% endfor -%}
+        },
+        {%- endfor %}
+    },
+    {%- endfor %}
+}
+
+
+{#- Macro rendering a full client class, parametrized over sync/async.
+    Every method gets all body slots (json/data/files/content): OpenAPI allows
+    a requestBody on any method, and the slots must exist at runtime or bodies
+    would silently vanish into **kwargs. #}
+{% macro client_class(class_name, httpx_class, is_async) %}
+{%- set adef = "async def" if is_async else "def" %}
+{%- set aw = "await " if is_async else "" %}
+{%- set mw_type = "AsyncMiddlewareT" if is_async else "MiddlewareT" %}
+{%- set handler_type = "AsyncHandlerT" if is_async else "HandlerT" %}
+class {{ class_name }}:
+    def __init__(self, base_url: str, **kwargs: Any) -> None:
+        """
+        Initializes the client.
+
+        :param base_url: The base URL for the API.
+        :param kwargs: Additional arguments passed directly to
+                       `httpx.{{ httpx_class }}`. Use this to set `headers`,
+                       `auth`, `timeout`, etc.
+        """
+        self.base_url = base_url
+        self.client = httpx.{{ httpx_class }}(base_url=base_url, **kwargs)
+        self._middlewares: list[{{ mw_type }}] = []
+
+    def add_middleware(self, middleware: {{ mw_type }}) -> None:
+        """
+        Adds a middleware to the client.
+
+        The middleware should be a {% if is_async %}coroutine {% endif %}function with the signature:
+        (request: httpx.Request, call_next: {{ handler_type }}) -> httpx.Response
+
+        :param middleware: The middleware function to add.
+        """
+        self._middlewares.append(middleware)
+
+    def middleware(self, func: {{ mw_type }}) -> {{ mw_type }}:
+        """
+        Decorator to add a middleware. See `add_middleware` for details.
+
+        :param func: The middleware function to add.
+        """
+        self.add_middleware(func)
+        return func
+
+    {%- for method in methods %}
+    {%- set method_ops = operations | selectattr("method", "equalto", method) | list %}
+
+    # -------------------------------------------------------------------------
+    # {{ method }} Operations
+    # -------------------------------------------------------------------------
+    {%- for op in method_ops %}
+
+    @overload
+    {{ adef }} {{ method }}(
+            self,
+            path: Literal[{{ op.path | py }}],
+            {%- if op.args %}
+            *,
+            {%- endif %}
+            {%- for arg in op.args %}
+            {{ arg.name }}: {{ arg.annotation }} = {{ arg.default }},
+            {%- endfor %}
+    ) -> {{ op.response }}:
+        """
+        {{ op.doc | wordwrap(72, break_long_words=False, break_on_hyphens=False) | indent(8) }}
+        """
+        ...
+    {%- endfor %}
+    {%- if method_ops %}
+
+    @overload
+    {{ adef }} {{ method }}(
+            self,
+            path: str,
+            *,
+            json: Any = None,
+            data: Any = None,
+            files: Any = None,
+            content: Any = None,
+            **kwargs: Any,
+    ) -> Response[Any, Any]:
+        """
+        Untyped escape hatch for paths not defined in the OpenAPI spec.
+        """
+        ...
+    {%- endif %}
+
+    {{ adef }} {{ method }}(
+        self,
+        path: str,
+        *,
+        json: Any = None,
+        data: Any = None,
+        files: Any = None,
+        content: Any = None,
+        **kwargs: Any,
+    ) -> Response[Any, Any]:
+        """
+        Generic {{ method }} implementation.
+        """
+        return {{ aw }}self._request(
+            {{ method | py }},
+            path,
+            json=json,
+            data=data,
+            files=files,
+            content=content,
+            params=kwargs,
+        )
+    {%- endfor %}
+
+    # -------------------------------------------------------------------------
+    # Internal Request Logic
+    # -------------------------------------------------------------------------
+    {{ adef }} _request(
+            self,
+            method: str,
+            path: str,
+            json: Any = None,
+            data: Any = None,
+            files: Any = None,
+            content: Any = None,
+            params: dict[str, Any] | None = None,
+    ) -> Response[Any, Any]:
+        request = prepare_request(
+            self.client,
+            method,
+            path,
+            json=json,
+            data=data,
+            files=files,
+            content=content,
+            params=params or {},
+            locations=_PARAM_MAP.get((method, path)),
+        )
+
+        # reversed(): the first middleware added becomes the outermost layer
+        {{ adef }} send_handler(req: httpx.Request) -> httpx.Response:
+            return {{ aw }}self.client.send(req)
+
+        handler: {{ handler_type }} = send_handler
+        for middleware in reversed(self._middlewares):
+            {{ adef }} wrapped(
+                req: httpx.Request,
+                next_handler: {{ handler_type }} = handler,
+                mw: {{ mw_type }} = middleware,
+            ) -> httpx.Response:
+                return {{ aw }}mw(req, next_handler)
+            handler = wrapped
+
+        res = {{ aw }}handler(request)
+        return Response(res)
+{% endmacro %}
+
+{% if sync_client -%}
+{{ client_class("Client", "Client", false) }}
+{%- endif %}
+
+{% if async_client -%}
+{{ client_class("AsyncClient", "AsyncClient", true) }}
+{%- endif %}

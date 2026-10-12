@@ -1,22 +1,20 @@
 import logging
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
+from typing import cast
 
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 
-from .generator import generate_sdk
+from . import generator
+from .emit import DEFAULT_MODES, MODES
+from .emit import Mode as ModeLiteral
 
-
-class ClientChoice(str, Enum):
-    """Which client class(es) to generate."""
-
-    async_ = "async"
-    sync = "sync"
-    both = "both"
-
+# Typer needs an Enum for a repeatable choice option; derive it from the one
+# definition in emit instead of spelling the choices a second time.
+Mode = StrEnum("Mode", MODES)  # type: ignore[misc]
 
 console = Console()
 
@@ -81,12 +79,13 @@ def generate(
         dir_okay=True,
         writable=True,
     ),
-    client: ClientChoice = typer.Option(
-        ClientChoice.async_,
+    client: list[Mode] = typer.Option(
+        [Mode(m) for m in DEFAULT_MODES],
         "--client",
         "-c",
-        help="Which client to generate: async (AsyncClient, default), "
-        "sync (Client), or both.",
+        help="Client flavor(s) to generate: async (AsyncClient, default) "
+        "or sync (Client). Repeat the flag to generate both "
+        "(-c async -c sync).",
     ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Enable verbose logging"
@@ -111,7 +110,9 @@ def generate(
     typer.echo(f"  - Output: {output_dir}")
 
     try:
-        generate_sdk(spec_source, output_dir, client_mode=client.value)
+        # typer validated the values against the enum derived from MODES
+        modes = cast(list[ModeLiteral], [m.value for m in client])
+        generator.generate(spec_source, output_dir, modes=modes)
         console.print(
             f"\n:sparkles: Successfully generated client in {output_dir}",
             style="bold green",
@@ -120,7 +121,7 @@ def generate(
         console.print(f"\n:x: Error: {e}", style="red")
         if verbose:
             raise  # This will show the full stack trace if -v is used
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
 
 @app.command()

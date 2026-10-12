@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
@@ -37,3 +37,13 @@ repos:
         # openapi_burrito + tests); both being main.py also trips mypy's
         # duplicate-module detection.
         exclude: ^examples/
+
+  - repo: local
+    hooks:
+      - id: uv-lock
+        name: uv lock --check
+        # A pyproject.toml change without a matching uv.lock fails CI's --locked sync
+        entry: uv lock --check
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false

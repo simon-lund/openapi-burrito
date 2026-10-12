@@ -1,34 +1,20 @@
+"""``preview``: serve a spec with Swagger UI and Redoc for a look before generating."""
+
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 import typer
-from starlette.responses import HTMLResponse
 
-try:
-    import httpx
-    import uvicorn
-    import yaml
-    from fastapi import FastAPI
-    from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+INSTALL_HINT = """\
+❌ Preview dependencies missing!
+To use this feature, install the 'preview' extra:
 
-except ImportError:
-    typer.secho("\n❌ Preview dependencies missing!", fg=typer.colors.RED, bold=True)
-    typer.echo("To use this feature, you need to install the 'preview' extras.")
-
-    typer.secho("\nIf you installed via 'uv tool':", fg=typer.colors.YELLOW)
-    typer.secho(
-        "  uv tool upgrade --with openapi-burrito[preview] openapi-burrito",
-        fg=typer.colors.CYAN,
-    )
-
-    typer.secho("\nIf you used pip:", fg=typer.colors.YELLOW)
-    typer.secho("  pip install 'openapi-burrito[preview]'\n", fg=typer.colors.CYAN)
-
-    typer.secho("\nIf you are in a local dev environment:", fg=typer.colors.YELLOW)
-    typer.secho("  uv sync --extra preview", fg=typer.colors.CYAN)
-
-    raise typer.Exit(code=1)
+  uv tool upgrade --with openapi-burrito[preview] openapi-burrito   (uv tool)
+  pip install 'openapi-burrito[preview]'                             (pip)
+  uv sync --extra preview                                            (this repo)
+"""
 
 
 def run_preview(input_source: str, port: int = 8000) -> None:
@@ -37,16 +23,24 @@ def run_preview(input_source: str, port: int = 8000) -> None:
     :param input_source: Path or URL to the OpenAPI specification (JSON or YAML).
     :param port: Port to run the server on (default: 8000).
     """
-    # Load the spec (Local or Remote)
+    try:
+        import httpx
+        import uvicorn
+        import yaml
+        from fastapi import FastAPI
+        from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+        from starlette.responses import HTMLResponse
+    except ImportError:
+        typer.secho(INSTALL_HINT, fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(code=1) from None
+
     try:
         if input_source.startswith(("http://", "https://")):
             spec_data = httpx.get(input_source).json()
         elif input_source.endswith(".json"):
-            with open(input_source) as f:
-                spec_data = json.load(f)
+            spec_data = json.loads(Path(input_source).read_text(encoding="utf-8"))
         elif input_source.endswith((".yaml", ".yml")):
-            with open(input_source) as f:
-                spec_data = yaml.safe_load(f)
+            spec_data = yaml.safe_load(Path(input_source).read_text(encoding="utf-8"))
         else:
             typer.secho(
                 f"\n❌ Unsupported file format for {input_source}. Use .json or .yaml",
@@ -60,7 +54,7 @@ def run_preview(input_source: str, port: int = 8000) -> None:
             fg=typer.colors.RED,
             bold=True,
         )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
     # Disable the default openapi, docs, and redoc so they don't conflict with ours
     app_ui = FastAPI(
@@ -91,7 +85,7 @@ def run_preview(input_source: str, port: int = 8000) -> None:
 if __name__ == "__main__":
     # Allows running: python openapi_burrito/preview.py my_spec.yaml
     if len(sys.argv) < 2:
-        print("Usage: python preview.py <path_or_url_to_spec>")
+        typer.echo("Usage: python preview.py <path_or_url_to_spec>", err=True)
         sys.exit(1)
 
     run_preview(sys.argv[1])

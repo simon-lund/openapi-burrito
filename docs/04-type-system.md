@@ -99,6 +99,20 @@ Binary fields (`type: string, format: binary`) become `bytes`:
 # Generated: bytes
 ```
 
+### Enums
+
+`enum` becomes a `Literal` of its members — no `Enum` classes, so values are
+plain strings on both sides of the wire:
+
+```python
+# OpenAPI: type: string, enum: [admin, guest]
+# Generated: Literal["admin", "guest"]
+```
+
+Only `str`, `int`, `bool` and `null` members can be spelled as a `Literal`
+(PEP 586). An enum containing floats, arrays or objects degrades to `Any`
+with a warning at generation time.
+
 ---
 
 ## Response Type

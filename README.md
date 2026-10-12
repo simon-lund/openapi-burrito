@@ -6,7 +6,7 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/simon-lund/openapi-burrito/main/docs/static/logo.png" alt="openapi-burrito logo" width="128" />
+<img src="https://raw.githubusercontent.com/simon-lund/openapi-burrito/main/docs/static/logo.png" alt="openapi-burrito logo" width="100" />
 
 # openapi-burrito
 
@@ -40,24 +40,28 @@ openapi-burrito generate openapi.json -o ./my_client
 ```
 
 ```python
+import asyncio
+
 from my_client import AsyncClient
 
-api = AsyncClient(base_url="https://api.example.com")
 
-# Path-first API: type-checked paths and snake_case parameters
-res = await api.GET("/users/{user_id}", user_id=123)
+async def main():
+    api = AsyncClient(base_url="https://api.example.com")
 
-if res.is_success:
-    print(res.data)
-else:
-    print(f"Error {res.status_code}: {res.error}")
+    # Path-first API: type-checked paths and snake_case parameters
+    res = await api.GET("/users/{user_id}", user_id=123)
 
-# Or let errors raise: unwrap() returns the typed body directly
-user = (await api.GET("/users/{user_id}", user_id=123)).unwrap()
+    if res.is_success:
+        print(res.data)
+    else:
+        print(f"Error {res.status_code}: {res.error}")
+
+    # Or let errors raise: unwrap() returns the typed body directly
+    user = (await api.GET("/users/{user_id}", user_id=123)).unwrap()
+
+
+asyncio.run(main())
 ```
-
-> `await` needs an async context: wrap calls in an `async def` +
-> `asyncio.run(...)`, or try snippets interactively with `python -m asyncio`.
 
 Prefer sync? Generate with `--client sync` and drop the `await`s — same
 paths, same overloads, `httpx.Client` underneath:
@@ -77,7 +81,7 @@ res = api.GET("/users/{user_id}", user_id=123)
 - **Type-Safe** - `TypedDict` models and `@overload` signatures; generated
   code passes `mypy --strict`
 - **Async by Default** - `AsyncClient` out of the box; `--client sync` or
-  `--client both` when you need the synchronous `Client`
+  `-c async -c sync` when you need the synchronous `Client` too
 - **Zero Runtime** - Generated code is yours; its only dependency is httpx
 - **httpx-Based** - Connection pooling, timeouts, all httpx client features
 - **Middleware System** - Logging, retry, auth via composable middleware
@@ -91,7 +95,10 @@ and your runtime should stay out of the way.**
 
 - **Dicts in, dicts out.** Responses are plain dicts typed as `TypedDict` —
   no model classes to instantiate, serialize, or fight with. `res.data` IS
-  the parsed JSON.
+  the parsed JSON. This is what makes the zero-runtime promise possible:
+  where model classes need a deserialization layer (and that layer needs a
+  runtime dependency), a `TypedDict` is erased at runtime — nothing to
+  construct, no per-request overhead, nothing to import but httpx.
 - **No validation, no coercion.** The generated client does not validate
   payloads against the schema and does not convert strings to `datetime`.
   Your type checker verifies structure at development time; at runtime you
@@ -138,28 +145,28 @@ make test
 
 ## Security
 
-This generator sanitizes identifiers and string literals to prevent code
-injection from malformed OpenAPI specs. However, **always review untrusted specs
-before generating**.
+Code generators turn untrusted input into code, so the design has to make
+injection impossible rather than filter it out. **Always review untrusted
+specs before generating** anyway.
 
-### Parser Safety Audit
+### How spec text reaches generated code
 
-All fields output by the parser are validated/sanitized:
+Nothing from the spec is concatenated into source as-is. Every value takes
+one of these paths:
 
-| Field                                 | Validation             | Notes                                 |
-| ------------------------------------- | ---------------------- | ------------------------------------- |
-| Model/param names                     | `sanitize(mode="id")`  | Converted to valid Python identifiers |
-| Model property keys                   | Identifier check / JSON-escape | Plain identifiers render in class syntax; everything else is JSON-escaped in functional `TypedDict` syntax (keys must match the wire format) |
-| Paths                                 | `sanitize(mode="str")` | String-escaped for literals           |
-| Descriptions/docs                     | `sanitize(mode="doc")` | Docstring-escaped (incl. backslashes) |
-| `type` strings                        | Type translator        | Built from validated schema types     |
-| `method`                              | `HTTPMethod` enum      | Only known HTTP methods allowed       |
-| `in` (param location)                 | Enum check             | Only `path\|query\|header\|cookie`    |
-| `required`, `read_only`, `write_only` | `bool()` cast          | Forced to boolean                     |
-| `default`                             | `repr()`               | Python string representation          |
-| pyproject.toml metadata               | JSON-escape            | TOML-safe string literals             |
+| What                                  | How it is emitted                 | Guarantee                                              |
+| ------------------------------------- | --------------------------------- | ------------------------------------------------------ |
+| Model and argument names              | `spec.naming.identifier()`        | Valid, non-keyword identifier or generation fails      |
+| Model property keys                   | Verbatim in class syntax if a plain identifier, else `repr()` in functional `TypedDict` syntax | Keys match the wire format; never hand-escaped |
+| Paths, enum values, defaults, wire names | `repr()`                       | A Python literal that evaluates back to the exact value |
+| Descriptions/docs                     | `emit.docstring()`         | Backslashes, triple quotes and control chars escaped; property-tested for every string |
+| Types                                 | Rendered from the IR by `match`   | Only known constructors; unknown schemas become `Any`  |
+| `method`, parameter `in`              | `ir.Method` / `ir.Location` enums | Unknown values are skipped with a warning              |
+| `required`, `readOnly`, `writeOnly`   | `bool()` cast                     | Forced to boolean                                      |
+| The runtime (`Response`, `UNSET`, …)  | Copied verbatim from `runtime.py` | Never templated; type-checked and tested in this repo  |
+| pyproject.toml metadata               | JSON-escape                       | TOML-safe string literals                              |
 
-Additionally, every generated `.py` file must pass `compile()` and the
+As defense in depth, every emitted `.py` file must pass `compile()` and the
 `pyproject.toml` must parse as TOML before anything is written to disk —
 malformed output aborts generation instead of landing in your project.
 
@@ -189,6 +196,7 @@ for an example of this vulnerability class in other generators.
 | [Type System](https://github.com/simon-lund/openapi-burrito/blob/main/docs/04-type-system.md)       | `UNSET`, `Unknown`, `NotRequired`, limitations |
 | [CLI Reference](https://github.com/simon-lund/openapi-burrito/blob/main/docs/05-cli-reference.md)   | `generate` and `preview` commands              |
 | [Contributing](https://github.com/simon-lund/openapi-burrito/blob/main/docs/06-contributing.md)     | Development setup and guidelines               |
+| [Architecture](https://github.com/simon-lund/openapi-burrito/blob/main/docs/07-architecture.md)     | `load` → `parse` → `emit`, the IR, tree vs graph |
 
 ## Examples
 

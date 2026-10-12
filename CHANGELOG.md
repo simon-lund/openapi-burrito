@@ -4,13 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/) (0.x: minor bumps may break).
 
-## [0.2.0] - 2026-07-17
+## [0.2.0] - unreleased
+
+### Architecture
+
+The generator is now a small compiler with three parts, and a Python API
+of four verbs — see [docs/07-architecture.md](docs/07-architecture.md):
+
+```python
+from openapi_burrito import load, parse, emit, generate
+api = parse(load("openapi.yaml"))     # ir.Api: a tree of frozen values
+files = emit(api, modes=("async",))   # {"client.py": "...", ...}
+```
+
+- `ir.py`: the intermediate representation. Models are referenced by name;
+  the dependency graph is a query (`Api.dependencies()`), not pointers.
+- `spec/`: OpenAPI → IR. Knows nothing about Python.
+- `emit/`: IR → Python. The only place types, literals and docstrings are
+  spelled. Literals go through `repr()`; nothing is hand-escaped.
+- `runtime.py`: `Response`, the sentinels, middleware and request building
+  are a real, tested module, copied verbatim into every generated package as
+  `_runtime.py` (previously templated text, invisible to mypy and tests).
 
 ### Breaking
 
+- **Python API**: `generate_sdk(spec, out, client_modes=...)` is now
+  `generate(spec, out, modes=...)`; `GenerationError` lives in
+  `openapi_burrito.emit` (re-exported from the package root).
+- **Generated output differs textually from 0.1.x**: the runtime is a
+  separate `_runtime.py` (re-exported from the package root, so
+  `from sdk import Response, UNSET` is unchanged); literals are rendered with
+  `repr()`; error response unions include `bytes` for
+  `application/octet-stream` bodies; path parameters are always required.
 - **Async by default**: `generate` now emits `AsyncClient` unless told
   otherwise. Use `--client sync` for the synchronous `Client` or
-  `--client both` for the pair. Class names never change with the mode.
+  repeat the flag (`-c async -c sync`) for both. Class names never
+  change with the modes.
 - **Keyword-only parameters**: all arguments after `path` must be passed by
   keyword (`api.GET("/pet/{pet_id}", pet_id=1)`); this matches the runtime
   routing and makes the `@overload` surface sound under `mypy --strict`.
@@ -25,7 +54,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - `AsyncClient` with async middleware support (`AsyncMiddlewareT`).
-- `--client async|sync|both` CLI flag (default: `async`).
+- Repeatable `--client async|sync` CLI flag (default: `async`).
 - `Response.unwrap()` returning the typed body directly, raising
   `ResponseError` (with the full typed response attached) on non-2xx.
 - Recursive schemas (`$ref` cycles) now generate correctly.
@@ -40,6 +69,16 @@ All notable changes to this project are documented here. The format follows
 - Generated code is post-formatted with ruff and passes `mypy --strict`
   (verified against the GitHub, Stripe, and converted Slack specs).
 - Clear error for Swagger 2.0 documents, pointing at `swagger2openapi`.
+- Operations carry `tags` and `operation_id` in the IR, so a client can be
+  filtered before emitting.
+- Models are emitted dependencies-first (`Api.dependency_order()`), so
+  functional-syntax TypedDicts get real annotations; only a reference that
+  closes a cycle is still a forward-reference string.
+- A property's own `description` beside a `$ref` wins over the referenced
+  model's.
+- CI verifies the lockfile, builds the package, and generates + type-checks
+  the example clients; Dependabot proposes updates monthly with a 30-day
+  cooldown.
 
 ### Fixed
 
@@ -57,6 +96,19 @@ All notable changes to this project are documented here. The format follows
   silently discarded.
 - Malformed JSON responses fall back to raw bytes instead of raising.
 - `.yml` spec files accepted by `preview`.
+- A spec with `"components": null` (or any object replaced by a scalar)
+  no longer crashes; every structural read tolerates malformed nodes.
+- Enums with members that cannot be a `Literal` (floats, arrays, objects)
+  degrade to `Any` with a warning instead of emitting invalid typing.
+- `modes="sync"` (a bare string) is accepted instead of being iterated as
+  characters; the invalid-modes error no longer crashes on mixed types.
+- Long docstring tokens are never split inside an escape sequence.
+- The post-format ruff run no longer leaves a `.ruff_cache/` inside the
+  generated package.
+- `openapi_burrito.preview` imports without the `preview` extra; the
+  install hint appears when the command runs, not when the module loads.
+- Non-finite float defaults (`.inf` in YAML) render as `float("inf")`
+  instead of the string `"inf"`.
 - The generated `pyproject.toml` uses the spec's real version and no longer
   depends on the unused `cattrs`.
 
