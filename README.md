@@ -202,9 +202,9 @@ for an example of this vulnerability class in other generators.
 
 See the [`examples/`](https://github.com/simon-lund/openapi-burrito/tree/main/examples/) directory:
 
-- **[Petstore](examples/petstore/)** - Classic Swagger Petstore API
-- **[Artifacts MMO](examples/artifactsmmo/)** - Game API with complex schemas
+- **[Petstore](https://github.com/simon-lund/openapi-burrito/tree/main/examples/petstore/)** - Classic Swagger Petstore API
+- **[Artifacts MMO](https://github.com/simon-lund/openapi-burrito/tree/main/examples/artifactsmmo/)** - Game API with complex schemas
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=klementine/openapi-burrito&type=date&legend=top-left)](https://www.star-history.com/#klementine/openapi-burrito&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=simon-lund/openapi-burrito&type=date&legend=top-left)](https://www.star-history.com/#simon-lund/openapi-burrito&type=date&legend=top-left)

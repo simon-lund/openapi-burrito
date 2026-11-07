@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/) (0.x: minor bumps may break).
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-11-07
 
 ### Architecture
 
@@ -53,6 +53,7 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
 
 ### Added
 
+- Python 3.14 support (tested in CI alongside 3.12 and 3.13).
 - `AsyncClient` with async middleware support (`AsyncMiddlewareT`).
 - Repeatable `--client async|sync` CLI flag (default: `async`).
 - `Response.unwrap()` returning the typed body directly, raising
@@ -122,7 +123,8 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
   failure instead of emitted code.
 - The `preview` extra accepts current FastAPI (`>=0.128.0`, was
   `~=0.128.0`). The old pin held Starlette at 0.52.x, which has five known
-  advisories fixed in 1.x. Typer is likewise `>=0.21.0` (was `~=0.21.0`).
+  advisories fixed in 1.x. Typer is likewise `>=0.21.0` (was `~=0.21.0`),
+  and prance accepts 26.x (`>=25.4.8,<26.7.20`).
 - Dependabot: grouped security updates; lockfile re-locked with no known
   vulnerabilities (`pip-audit`, 2026-11-07).
 
