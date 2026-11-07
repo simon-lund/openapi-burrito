@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/) (0.x: minor bumps may break).
 
+## [0.2.1] - 2026-11-08
+
+### Fixed
+
+- Pyright, and with it VS Code's Pylance, no longer hangs on generated async
+  clients. Middleware chaining moved from an inline closure loop in the
+  template into the runtime (`chain_middlewares`, `chain_async_middlewares`);
+  mypy was never affected.
+- The vendored runtime is clean under pyright's strict mode.
+
+### Added
+
+- The test suite type-checks generated clients with strict pyright (via
+  basedpyright) next to `mypy --strict`, with a timeout, so a hang fails CI.
+
 ## [0.2.0] - 2026-11-07
 
 ### Architecture
