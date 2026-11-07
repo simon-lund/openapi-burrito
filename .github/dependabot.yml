@@ -17,5 +17,9 @@ updates:
     cooldown:
       default-days: 30
     groups:
+      # Security fixes arrive as one PR and skip the cooldown above.
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
       dev-dependencies:
         dependency-type: "development"

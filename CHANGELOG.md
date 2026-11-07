@@ -120,6 +120,11 @@ files = emit(api, modes=("async",))   # {"client.py": "...", ...}
   TOML-escaped.
 - The `compile()` gate turns any escaping gap into a loud generation-time
   failure instead of emitted code.
+- The `preview` extra accepts current FastAPI (`>=0.128.0`, was
+  `~=0.128.0`). The old pin held Starlette at 0.52.x, which has five known
+  advisories fixed in 1.x. Typer is likewise `>=0.21.0` (was `~=0.21.0`).
+- Dependabot: grouped security updates; lockfile re-locked with no known
+  vulnerabilities (`pip-audit`, 2026-11-07).
 
 ## [0.1.1] - 2026-01-05
 

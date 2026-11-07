@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal
 
-type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
+type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
 """A JSON value, as it appears in ``default`` and ``enum``."""
 
 # ---------------------------------------------------------------------------

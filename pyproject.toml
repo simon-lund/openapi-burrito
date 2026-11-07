@@ -32,12 +32,12 @@ dependencies = [
     "openapi-spec-validator~=0.7.2",
     "prance[osv]~=25.4.8.0",
     "ruff>=0.9",
-    "typer~=0.21.0",
+    "typer>=0.21.0",
 ]
 
 [project.optional-dependencies]
 preview = [
-    "fastapi[standard]~=0.128.0",
+    "fastapi[standard]>=0.128.0",
 ]
 
 [project.urls]
