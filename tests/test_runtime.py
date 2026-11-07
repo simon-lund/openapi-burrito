@@ -6,14 +6,22 @@ package, so it is tested like any other module — no generation needed.
 ``test_generation.py`` still drives it end-to-end through generated clients.
 """
 
+import asyncio
+
 import httpx
 import pytest
 
 from openapi_burrito.runtime import (
     REQUIRED,
     UNSET,
+    AsyncHandlerT,
+    AsyncMiddlewareT,
+    HandlerT,
+    MiddlewareT,
     Response,
     ResponseError,
+    chain_async_middlewares,
+    chain_middlewares,
     prepare_request,
 )
 
@@ -183,3 +191,75 @@ class TestResponse:
         assert res.headers["x-id"] == "1"
         assert res.url.path == "/"  # __getattr__ passthrough
         assert repr(res) == "<Response [200]>"
+
+
+REQUEST = httpx.Request("GET", "http://api.test/")
+
+
+def _tagging(name: str, calls: list[str]) -> MiddlewareT:
+    def middleware(request: httpx.Request, call_next: HandlerT) -> httpx.Response:
+        calls.append(f"{name}>")
+        response = call_next(request)
+        calls.append(f"<{name}")
+        response.headers["x-seen-by"] = response.headers.get("x-seen-by", "") + name
+        return response
+
+    return middleware
+
+
+def _tagging_async(name: str, calls: list[str]) -> AsyncMiddlewareT:
+    async def middleware(
+        request: httpx.Request, call_next: AsyncHandlerT
+    ) -> httpx.Response:
+        calls.append(f"{name}>")
+        response = await call_next(request)
+        calls.append(f"<{name}")
+        response.headers["x-seen-by"] = response.headers.get("x-seen-by", "") + name
+        return response
+
+    return middleware
+
+
+class TestChainMiddlewares:
+    def test_first_middleware_is_outermost(self) -> None:
+        calls: list[str] = []
+
+        def send(request: httpx.Request) -> httpx.Response:
+            calls.append("send")
+            return httpx.Response(200)
+
+        middlewares = [_tagging("a", calls), _tagging("b", calls)]
+        response = chain_middlewares(middlewares, send)(REQUEST)
+
+        assert calls == ["a>", "b>", "send", "<b", "<a"]
+        assert response.headers["x-seen-by"] == "ba"  # inner sees it first
+
+    def test_no_middlewares_is_send_itself(self) -> None:
+        def send(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(204)
+
+        assert chain_middlewares([], send) is send
+
+    def test_async_first_middleware_is_outermost(self) -> None:
+        calls: list[str] = []
+
+        async def send(request: httpx.Request) -> httpx.Response:
+            calls.append("send")
+            return httpx.Response(200)
+
+        middlewares = [_tagging_async("a", calls), _tagging_async("b", calls)]
+        handler = chain_async_middlewares(middlewares, send)
+
+        async def run() -> httpx.Response:
+            return await handler(REQUEST)
+
+        response = asyncio.run(run())
+
+        assert calls == ["a>", "b>", "send", "<b", "<a"]
+        assert response.headers["x-seen-by"] == "ba"
+
+    def test_async_no_middlewares_is_send_itself(self) -> None:
+        async def send(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(204)
+
+        assert chain_async_middlewares([], send) is send

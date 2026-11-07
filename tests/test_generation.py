@@ -417,6 +417,32 @@ def test_generated_client_passes_strict_mypy(
     assert result.returncode == 0, f"mypy --strict failed:\n{result.stdout}"
 
 
+@pytest.mark.parametrize("spec_name", ["petstore", "edgecases"])
+def test_generated_client_passes_strict_pyright(
+    generated_client: Callable[[str], ModuleType], spec_name: str, tmp_path: Path
+) -> None:
+    """Pyright powers VS Code's Pylance, so the output must be strict-clean there
+    too, and fast: an inline middleware closure once made it hang on the async
+    client while mypy passed, so the timeout is part of the check."""
+    module = generated_client(spec_name)
+    config = tmp_path / "pyrightconfig.json"
+    config.write_text('{"typeCheckingMode": "strict"}')
+    result = subprocess.run(
+        [
+            str(Path(sys.executable).parent / "basedpyright"),
+            "--project",
+            str(config),
+            "--pythonpath",
+            sys.executable,
+            str(source_dir(module)),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, f"pyright strict failed:\n{result.stdout}"
+
+
 # ---------------------------------------------------------------------------
 # Project metadata
 # ---------------------------------------------------------------------------

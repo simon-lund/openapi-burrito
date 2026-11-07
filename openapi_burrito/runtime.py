@@ -12,7 +12,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Final, cast
 
@@ -314,7 +314,7 @@ def prepare_request(
         "header": {},
         "cookie": {},
     }
-    unknown = []
+    unknown: list[str] = []
     for name, value in given.items():
         for location, names in locations.items():
             if name in names:
@@ -354,3 +354,44 @@ def _escape_hatch(path: str, given: Mapping[str, Any]) -> Locations:
         "path": {name: name for name in given if name in placeholders},
         "query": {name: name for name in given if name not in placeholders},
     }
+
+
+def chain_middlewares(middlewares: Sequence[MiddlewareT], send: HandlerT) -> HandlerT:
+    """
+    Wraps ``send`` in ``middlewares``; the first middleware is the outermost
+    layer, so it sees the request first and the response last.
+
+    Each layer comes from :func:`_link`, whose declared return type keeps type
+    checkers from inferring through the loop (pyright stalls on the
+    equivalent inline closure).
+    """
+    handler = send
+    for middleware in reversed(middlewares):
+        handler = _link(middleware, handler)
+    return handler
+
+
+def _link(middleware: MiddlewareT, call_next: HandlerT) -> HandlerT:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return middleware(request, call_next)
+
+    return handler
+
+
+def chain_async_middlewares(
+    middlewares: Sequence[AsyncMiddlewareT], send: AsyncHandlerT
+) -> AsyncHandlerT:
+    """The async counterpart of :func:`chain_middlewares`."""
+    handler = send
+    for middleware in reversed(middlewares):
+        handler = _link_async(middleware, handler)
+    return handler
+
+
+def _link_async(
+    middleware: AsyncMiddlewareT, call_next: AsyncHandlerT
+) -> AsyncHandlerT:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return await middleware(request, call_next)
+
+    return handler

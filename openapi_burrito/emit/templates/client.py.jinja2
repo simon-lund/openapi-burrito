@@ -14,6 +14,8 @@ from ._runtime import (
     REQUIRED,
     Response,
     UNSET,
+    chain_async_middlewares,
+    chain_middlewares,
     prepare_request,
 )
 from .models import *
@@ -171,20 +173,11 @@ class {{ class_name }}:
             locations=_PARAM_MAP.get((method, path)),
         )
 
-        # reversed(): the first middleware added becomes the outermost layer
-        {{ adef }} send_handler(req: httpx.Request) -> httpx.Response:
+        {{ adef }} send(req: httpx.Request) -> httpx.Response:
             return {{ aw }}self.client.send(req)
 
-        handler: {{ handler_type }} = send_handler
-        for middleware in reversed(self._middlewares):
-            {{ adef }} wrapped(
-                req: httpx.Request,
-                next_handler: {{ handler_type }} = handler,
-                mw: {{ mw_type }} = middleware,
-            ) -> httpx.Response:
-                return {{ aw }}mw(req, next_handler)
-            handler = wrapped
-
+        # the first middleware added is the outermost layer
+        handler = chain_{{ "async_" if is_async }}middlewares(self._middlewares, send)
         res = {{ aw }}handler(request)
         return Response(res)
 {% endmacro %}
