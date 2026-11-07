@@ -20,9 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.14: prance's dependency chain (referencing/attrs) segfaults at
-        # import as of 2026-10; add it once `uv run --python 3.14 pytest` passes
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
 

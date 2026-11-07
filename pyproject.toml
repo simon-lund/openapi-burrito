@@ -20,7 +20,7 @@ keywords = [
 classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    # 3.14: prance's dependency chain (referencing/attrs) segfaults at import, 2026-10
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
