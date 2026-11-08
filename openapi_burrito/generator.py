@@ -16,6 +16,8 @@ def generate(
     spec_path: str | Path,
     output_dir: str | Path,
     modes: Collection[Mode] = DEFAULT_MODES,
+    *,
+    allow_external_refs: bool = False,
 ) -> None:
     """
     Generates a Python client package from an OpenAPI specification.
@@ -24,10 +26,11 @@ def generate(
     :param output_dir: Directory where the generated package is written.
     :param modes: Which client flavors to generate, ``"async"`` and/or
         ``"sync"`` (default: async only).
+    :param allow_external_refs: See :func:`openapi_burrito.spec.load`.
     """
     output_dir = Path(output_dir)
 
-    api = parse(load(spec_path))
+    api = parse(load(spec_path, allow_external_refs=allow_external_refs))
     logger.info("Loaded spec: %s v%s", api.title, api.version)
     logger.info("Parsed %d models, %d operations", len(api.models), len(api.operations))
 

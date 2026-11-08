@@ -30,6 +30,8 @@ Example: A schema named [code]"User:\\nimport os;"os.system('rm -rf /')\"[/code]
 
 This generator sanitizes inputs, but the safest approach is to review the spec yourself.
 
+$refs to URLs or to files outside the spec's folder are refused unless you pass --allow-external-refs.
+
 [cyan bold]Tip:[/cyan bold] Use [code]openapi-burrito preview <spec>[/code] to inspect a spec before generating.\
 """  # noqa: E501
 
@@ -87,6 +89,12 @@ def generate(
         "or sync (Client). Repeat the flag to generate both "
         "(-c async -c sync).",
     ),
+    allow_external_refs: bool = typer.Option(
+        False,
+        "--allow-external-refs",
+        help="Let the spec's $refs reach URLs and files outside its folder. "
+        "Only for specs you trust: what they read ends up in the generated code.",
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Enable verbose logging"
     ),
@@ -112,7 +120,12 @@ def generate(
     try:
         # typer validated the values against the enum derived from MODES
         modes = cast(list[ModeLiteral], [m.value for m in client])
-        generator.generate(spec_source, output_dir, modes=modes)
+        generator.generate(
+            spec_source,
+            output_dir,
+            modes=modes,
+            allow_external_refs=allow_external_refs,
+        )
         console.print(
             f"\n:sparkles: Successfully generated client in {output_dir}",
             style="bold green",

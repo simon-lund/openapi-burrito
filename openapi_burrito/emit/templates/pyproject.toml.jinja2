@@ -1,7 +1,7 @@
 [project]
-name = {{ metadata.project_name | tojson }}
-version = {{ metadata.version | tojson }}
-description = {{ metadata.description | tojson }}
+name = {{ metadata.project_name | toml }}
+version = {{ metadata.version | toml }}
+description = {{ metadata.description | toml }}
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.27.0",

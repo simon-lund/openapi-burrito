@@ -15,6 +15,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Final, cast
+from urllib.parse import quote
 
 import httpx
 
@@ -329,7 +330,7 @@ def prepare_request(
         )
 
     try:
-        url = path.format(**routed["path"])
+        url = path.format(**{k: _path_segment(v) for k, v in routed["path"].items()})
     except KeyError as e:
         raise TypeError(f"Missing required path parameter: {e}") from e
 
@@ -344,6 +345,21 @@ def prepare_request(
         headers=routed["header"],
         cookies=routed["cookie"],
     )
+
+
+def _path_segment(value: Any) -> str:
+    """
+    A path argument as one URL segment. ``/``, ``?``, ``#`` and ``%`` in a value
+    stay data, so untrusted input cannot reach another endpoint. To send a path
+    with slashes in it on purpose, write it into the path string yourself.
+
+    :raises ValueError: for ``.`` and ``..``, which servers and httpx normalize
+        away whether they are encoded or not.
+    """
+    segment = quote(str(value), safe="")
+    if segment in {".", ".."}:
+        raise ValueError(f"Path argument {value!r} would change the URL path")
+    return segment
 
 
 def _escape_hatch(path: str, given: Mapping[str, Any]) -> Locations:

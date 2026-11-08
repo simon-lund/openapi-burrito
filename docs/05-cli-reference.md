@@ -21,6 +21,9 @@ openapi-burrito generate <SPEC_SOURCE> [OPTIONS]
   `async`). `async` emits `AsyncClient`, `sync` emits `Client`; repeat the
   flag (`-c async -c sync`) to emit both side by side. Class names never
   change with the modes — the flag only controls what is emitted.
+- `--allow-external-refs` - Let the spec's `$ref`s reach URLs and files outside
+  its folder. By default these are refused, because what they read ends up in
+  the generated code. A spec loaded from a URL may only reference itself.
 - `-v, --verbose` - Enable verbose logging
 - `-y, --yes` - Skip security confirmation prompt
 

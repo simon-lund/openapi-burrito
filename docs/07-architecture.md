@@ -28,7 +28,7 @@ The public Python API is four verbs:
 ```python
 from openapi_burrito import load, parse, emit, generate
 
-doc = load("openapi.yaml")            # dict, external $refs resolved
+doc = load("openapi.yaml")            # dict, $refs inside its folder resolved
 api = parse(doc)                      # ir.Api
 files = emit(api, modes=("async",))   # {"client.py": "...", "models.py": "...", ...}
 generate("openapi.yaml", "sdk/")      # load → parse → emit → validate → write → format

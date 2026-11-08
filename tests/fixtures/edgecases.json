@@ -3,7 +3,7 @@
   "info": {
     "title": "Edge Cases",
     "version": "2.3.4",
-    "description": "Spec with \"quotes\" and a backslash \\ in the description"
+    "description": "Spec with \"quotes\" and a backslash \\ in the description 🌯"
   },
   "paths": {
     "/users/{userId}": {
@@ -102,6 +102,15 @@
             }
           }
         },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/keywords/{Class}": {
+      "get": {
+        "parameters": [
+          { "name": "Class", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "From", "in": "query", "schema": { "type": "string" } }
+        ],
         "responses": { "200": { "description": "ok" } }
       }
     },

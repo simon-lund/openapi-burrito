@@ -114,6 +114,52 @@ class TestPrepareRequest:
         assert req.url.path == "/not/in/spec/3"
         assert req.url.params["q"] == "hello"
 
+    @pytest.mark.parametrize(
+        ("value", "segment"),
+        [
+            (7, "7"),
+            ("a b", "a%20b"),
+            ("a/b", "a%2Fb"),
+            ("../../admin", "..%2F..%2Fadmin"),
+            ("x?admin=1", "x%3Fadmin%3D1"),
+            ("x#frag", "x%23frag"),
+            ("a%2Fb", "a%252Fb"),
+            ("ü", "%C3%BC"),
+            ("v1.2", "v1.2"),
+        ],
+    )
+    def test_path_value_stays_in_its_segment(
+        self, client: httpx.Client, value: object, segment: str
+    ) -> None:
+        for locations in (LOCATIONS, None):  # from the spec, and the escape hatch
+            req = prepare_request(
+                client,
+                "GET",
+                "/pet/{pet_id}/photos",
+                params={"pet_id": value},
+                locations=locations,
+            )
+            assert req.url.raw_path.decode() == f"/pet/{segment}/photos"
+
+    @pytest.mark.parametrize("value", [".", ".."])
+    def test_dot_segments_refused(self, client: httpx.Client, value: str) -> None:
+        with pytest.raises(ValueError, match="would change the URL path"):
+            prepare_request(
+                client,
+                "GET",
+                "/pet/{pet_id}",
+                params={"pet_id": value},
+                locations=LOCATIONS,
+            )
+
+    def test_slashes_on_purpose_go_in_the_path_string(
+        self, client: httpx.Client
+    ) -> None:
+        req = prepare_request(
+            client, "GET", "/files/a/b.txt", params={}, locations=None
+        )
+        assert req.url.path == "/files/a/b.txt"
+
     def test_body_slots_forwarded(self, client: httpx.Client) -> None:
         req = prepare_request(
             client, "POST", "/pet", json={"name": "Rex"}, params={}, locations={}

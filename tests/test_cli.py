@@ -1,5 +1,6 @@
 """The CLI, driven through typer's test runner."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -28,6 +29,32 @@ class TestGenerate:
             "pyproject.toml",
         }
         assert "class Client:" in (out / "client.py").read_text()
+
+    def test_external_ref_needs_the_flag(self, tmp_path: Path) -> None:
+        (tmp_path / "outside.json").write_text('{"type": "object"}')
+        spec = tmp_path / "api" / "openapi.json"
+        spec.parent.mkdir()
+        spec.write_text(
+            json.dumps(
+                {
+                    "openapi": "3.0.3",
+                    "info": {"title": "t", "version": "1"},
+                    "paths": {},
+                    "components": {"schemas": {"M": {"$ref": "../outside.json"}}},
+                }
+            )
+        )
+        out = tmp_path / "sdk"
+        args = ["generate", str(spec), "-o", str(out), "-y"]
+
+        refused = runner.invoke(app, args)
+        assert refused.exit_code == 1
+        assert "--allow-external-refs" in " ".join(refused.output.split())
+        assert not out.exists()
+
+        allowed = runner.invoke(app, [*args, "--allow-external-refs"])
+        assert allowed.exit_code == 0, allowed.output
+        assert "class M(" in (out / "models.py").read_text()
 
     def test_repeatable_client_flag(self, tmp_path: Path) -> None:
         out = tmp_path / "sdk"

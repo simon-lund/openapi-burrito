@@ -65,6 +65,11 @@ With `--client sync` the API is identical minus the `await`.
 > **Note**: Path parameters are automatically converted to snake_case. OpenAPI's
 > `{userId}` becomes `{user_id}` in the generated client.
 
+> **Note**: Path arguments are percent-encoded, so don't encode them yourself. A
+> value with a slash stays one segment (`a/b` becomes `a%2Fb`). If you want the
+> slashes to split the path, write it into the path string yourself:
+> `api.GET(f"/files/{path}")`.
+
 ## httpx Configuration
 
 The generated client wraps [httpx](https://www.python-httpx.org/), so all

@@ -12,6 +12,7 @@ runtime is copied, not templated. The ``compile()`` gate on every emitted file
 is defense in depth.
 """
 
+import json
 import keyword
 import math
 import re
@@ -123,6 +124,17 @@ def docstring(text: str) -> str:
         text.replace("\\", "\\\\").replace('"""', r"\"\"\"").replace("'''", r"\'\'\'")
     )
     return _CONTROL_CHARS.sub(lambda m: f"\\x{ord(m.group()):02x}", escaped)
+
+
+def toml_string(value: str) -> str:
+    """
+    A TOML basic string. JSON's escapes are valid TOML, except that ``ensure_ascii``
+    spells emoji as surrogate pairs, which TOML rejects, so they stay literal.
+    JSON leaves DEL as it is and TOML does not allow it; a lone surrogate cannot
+    be written as UTF-8 at all.
+    """
+    text = value.encode("utf-8", "replace").decode("utf-8")
+    return json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
 def is_plain_key(name: str) -> bool:
@@ -285,6 +297,7 @@ def emit(api: ir.Api, modes: Collection[Mode] = DEFAULT_MODES) -> dict[str, str]
 
     env = Environment(loader=FileSystemLoader(TEMPLATES), keep_trailing_newline=True)
     env.filters["py"] = literal
+    env.filters["toml"] = toml_string
 
     # Dependencies first, so functional TypedDicts can use real annotations
     models = []

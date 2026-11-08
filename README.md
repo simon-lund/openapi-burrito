@@ -164,7 +164,7 @@ one of these paths:
 | `method`, parameter `in`              | `ir.Method` / `ir.Location` enums | Unknown values are skipped with a warning              |
 | `required`, `readOnly`, `writeOnly`   | `bool()` cast                     | Forced to boolean                                      |
 | The runtime (`Response`, `UNSET`, …)  | Copied verbatim from `runtime.py` | Never templated; type-checked and tested in this repo  |
-| pyproject.toml metadata               | JSON-escape                       | TOML-safe string literals                              |
+| pyproject.toml metadata               | `emit.toml_string()`              | TOML-safe string literals                              |
 
 As defense in depth, every emitted `.py` file must pass `compile()` and the
 `pyproject.toml` must parse as TOML before anything is written to disk —
@@ -185,6 +185,19 @@ generate clients from trusted sources.
 See
 [CVE-2020-15142](https://github.com/openapi-generators/openapi-python-client/security/advisories/GHSA-9x4c-63pf-525f)
 for an example of this vulnerability class in other generators.
+
+### What a spec can reach
+
+Whatever a `$ref` reads ends up in the generated code. So a spec may only
+reference files inside its own folder, and a spec loaded from a URL may only
+reference itself. Anything else (other URLs, files elsewhere on disk) is refused
+before it is read, unless you pass `--allow-external-refs` for a spec you trust.
+
+### Path arguments
+
+Generated clients percent-encode path arguments, so `id="../../admin"` stays one
+URL segment and cannot reach another endpoint. `.` and `..` raise `ValueError`,
+because no encoding keeps them from being normalized away.
 
 ## Documentation
 
