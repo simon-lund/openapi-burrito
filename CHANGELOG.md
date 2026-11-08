@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow
 [SemVer](https://semver.org/) (0.x: minor bumps may break).
 
+## [0.2.2] - 2026-11-08
+
+### Security
+
+- A spec can no longer read files or URLs through `$ref` by default. External
+  refs were resolved without limits, and what they read ended up in the
+  generated code: a hostile spec could pull in local JSON/YAML files or make
+  requests to internal addresses (the class of CVE-2026-55389 and
+  CVE-2026-54690 in datamodel-code-generator). A spec may now only reference
+  files inside its own folder, and a spec loaded from a URL only itself.
+  **Breaking** for specs that reference `../` files or URLs: pass the new
+  `--allow-external-refs` (`allow_external_refs=True` in Python) for specs you
+  trust.
+- Generated clients percent-encode path arguments, so `id="../../admin"` can no
+  longer reach another endpoint. **Breaking** for callers who pass slashes on
+  purpose or encode values themselves: write such a path into the path string
+  (`api.GET(f"/files/{path}")`) and stop encoding. `.` and `..` raise
+  `ValueError`. Clients generated earlier stay as they are until regenerated.
+
+### Changed
+
+- A spec loaded from a URL now keeps its internal refs, like a local one, so its
+  schemas become named models instead of inlined copies.
+
+### Fixed
+
+- An emoji in the spec's `info.description` or `info.version` no longer stops
+  generation with an invalid `pyproject.toml`.
+- Parameters whose names lowercase into a Python keyword (`From`, `Class`, `In`)
+  no longer stop generation. They become `from_`, `class_`, `in_`.
+
 ## [0.2.1] - 2026-11-08
 
 ### Fixed
