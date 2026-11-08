@@ -1,6 +1,10 @@
 """Tests for the frontend: naming, $ref resolution, type reading, parse()."""
 
+import json
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import Any
 
 import pytest
@@ -18,7 +22,7 @@ from openapi_burrito.ir import (
     Map,
     Ref,
 )
-from openapi_burrito.spec import load, naming, parse
+from openapi_burrito.spec import SpecError, load, naming, parse
 from openapi_burrito.spec.resolver import RefResolver
 from openapi_burrito.spec.types import type_expr
 
@@ -83,6 +87,21 @@ class TestSnakeCase:
 
 def param(name: str, location: ir.Location, api_name: str | None = None) -> ir.Param:
     return ir.Param(name, api_name or name, location, STRING, required=False)
+
+
+class TestArgumentName:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("petId", "pet_id"),
+            ("From", "from_"),
+            ("Class", "class_"),
+            ("IN", "in_"),
+            ("from", "from_"),
+        ],
+    )
+    def test_never_a_keyword(self, raw: str, expected: str) -> None:
+        assert naming.argument_name(raw) == expected
 
 
 class TestDeconflict:
@@ -186,6 +205,161 @@ class TestRefResolver:
 # ---------------------------------------------------------------------------
 # types
 # ---------------------------------------------------------------------------
+
+
+def spec_with_models(**schemas: Any) -> dict[str, Any]:
+    return {
+        "openapi": "3.0.3",
+        "info": {"title": "t", "version": "1"},
+        "paths": {},
+        "components": {"schemas": schemas},
+    }
+
+
+def write(path: Path, document: Any) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document))
+    return path
+
+
+class SpecServer:
+    """A local HTTP server for specs and ref targets; records what was requested."""
+
+    def __init__(self) -> None:
+        self.documents: dict[str, Any] = {}
+        self.requests: list[str] = []
+        self.url = ""
+
+
+@pytest.fixture
+def server() -> Iterator[SpecServer]:
+    state = SpecServer()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            state.requests.append(self.path)
+            body = json.dumps(state.documents[self.path]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as http:
+        Thread(target=http.serve_forever, daemon=True).start()
+        state.url = f"http://127.0.0.1:{http.server_address[1]}"
+        yield state
+        http.shutdown()
+
+
+class TestExternalRefs:
+    SECRET = {"type": "object", "description": "secret"}  # noqa: RUF012
+
+    @pytest.fixture
+    def folder(self, tmp_path: Path) -> Path:
+        """The spec's folder; ``tmp_path/outside`` holds a file it must not reach."""
+        write(tmp_path / "outside" / "secret.json", self.SECRET)
+        return tmp_path / "api"
+
+    def test_files_inside_the_folder_are_resolved(self, folder: Path) -> None:
+        write(folder / "models" / "pet.json", {"$ref": "owner.json"})
+        write(folder / "models" / "owner.json", {"type": "object", "description": "o"})
+        spec = spec_with_models(Pet={"$ref": "models/pet.json"})
+
+        loaded = load(write(folder / "openapi.json", spec))
+
+        assert loaded["components"]["schemas"]["Pet"]["description"] == "o"
+
+    @pytest.mark.parametrize(
+        "ref",
+        [
+            "../outside/secret.json",
+            "file://{root}/outside/secret.json",
+            "{root}/outside/secret.json",
+            "models/../../outside/secret.json",
+            "python://prance/__init__.py",
+        ],
+    )
+    def test_anything_else_on_disk_is_refused(self, folder: Path, ref: str) -> None:
+        spec = spec_with_models(M={"$ref": ref.format(root=folder.parent)})
+        with pytest.raises(SpecError, match="external"):
+            load(write(folder / "openapi.json", spec))
+
+    def test_refused_before_it_is_read(self, folder: Path) -> None:
+        """A read would fail with "file not found" instead."""
+        spec = spec_with_models(M={"$ref": "../outside/missing.json"})
+        with pytest.raises(SpecError, match="external"):
+            load(write(folder / "openapi.json", spec))
+
+    def test_refused_when_a_file_inside_leads_outside(self, folder: Path) -> None:
+        write(folder / "hop.json", {"$ref": "../outside/secret.json"})
+        spec = spec_with_models(M={"$ref": "hop.json"})
+        with pytest.raises(SpecError, match="external"):
+            load(write(folder / "openapi.json", spec))
+
+    def test_refused_when_a_symlink_leads_outside(self, folder: Path) -> None:
+        folder.mkdir()
+        (folder / "link.json").symlink_to(folder.parent / "outside" / "secret.json")
+        spec = spec_with_models(M={"$ref": "link.json"})
+        with pytest.raises(SpecError, match="external"):
+            load(write(folder / "openapi.json", spec))
+
+    def test_outside_refs_anywhere_in_the_document(self, folder: Path) -> None:
+        spec = spec_with_models()
+        spec["info"]["description"] = {"$ref": "../outside/secret.json#/description"}
+        with pytest.raises(SpecError, match="external"):
+            load(write(folder / "openapi.json", spec))
+
+    def test_url_refused_without_a_request(
+        self, folder: Path, server: SpecServer
+    ) -> None:
+        server.documents["/secret.json"] = self.SECRET
+        spec = spec_with_models(M={"$ref": f"{server.url}/secret.json"})
+        with pytest.raises(SpecError, match="external"):
+            load(write(folder / "openapi.json", spec))
+        assert server.requests == []
+
+    def test_spec_from_url_keeps_internal_refs(self, server: SpecServer) -> None:
+        server.documents["/openapi.json"] = spec_with_models(
+            A={"type": "object"}, B={"$ref": "#/components/schemas/A"}
+        )
+        loaded = load(f"{server.url}/openapi.json")
+        assert loaded["components"]["schemas"]["B"] == {
+            "$ref": "#/components/schemas/A"
+        }
+
+    def test_spec_from_url_cannot_read_local_files(
+        self, folder: Path, server: SpecServer
+    ) -> None:
+        server.documents["/openapi.json"] = spec_with_models(
+            M={"$ref": f"file://{folder.parent}/outside/secret.json"}
+        )
+        with pytest.raises(SpecError, match="external"):
+            load(f"{server.url}/openapi.json")
+
+    def test_spec_from_url_cannot_reach_other_urls(self, server: SpecServer) -> None:
+        server.documents["/openapi.json"] = spec_with_models(
+            M={"$ref": f"{server.url}/secret.json"}
+        )
+        with pytest.raises(SpecError, match="external"):
+            load(f"{server.url}/openapi.json")
+        assert server.requests == ["/openapi.json"]
+
+    def test_opt_in_allows_both(self, folder: Path, server: SpecServer) -> None:
+        server.documents["/remote.json"] = {"type": "object", "description": "remote"}
+        spec = spec_with_models(
+            Local={"$ref": "../outside/secret.json"},
+            Remote={"$ref": f"{server.url}/remote.json"},
+        )
+        source = write(folder / "openapi.json", spec)
+
+        schemas = load(source, allow_external_refs=True)["components"]["schemas"]
+
+        assert schemas["Local"]["description"] == "secret"
+        assert schemas["Remote"]["description"] == "remote"
 
 
 class TestTypeExpr:

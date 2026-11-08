@@ -158,6 +158,13 @@ class TestCollisions:
         assert client_src.count("user_id: int = REQUIRED") == 2
         assert client_src.count("user_id: str = REQUIRED") == 2
 
+    def test_names_that_lowercase_into_keywords(self, edge: ModuleType) -> None:
+        recorder = Recorder()
+        api = make_client(edge, recorder)
+        api.GET("/keywords/{class_}", class_="a", from_="b")
+        assert recorder.last.url.path == "/keywords/a"
+        assert recorder.last.url.params["From"] == "b"
+
     def test_snake_case_collision_renamed(self, edge: ModuleType) -> None:
         recorder = Recorder()
         api = make_client(edge, recorder)
@@ -455,3 +462,5 @@ class TestMetadata:
         # Quotes and backslashes in the spec description survive TOML-escaping
         assert '"quotes"' in data["project"]["description"]
         assert "\\" in data["project"]["description"]
+        # Characters outside the BMP have no valid TOML escape via surrogates
+        assert data["project"]["description"].endswith("\U0001f32f")

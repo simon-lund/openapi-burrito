@@ -74,7 +74,9 @@ def model_name(raw: str) -> str:
 
 def argument_name(raw: str) -> str:
     """The Python argument name for a parameter name."""
-    return snake_case(identifier(raw))
+    name = snake_case(identifier(raw))
+    # Lowercasing can land on a keyword that identifier() let through (From)
+    return f"{name}_" if keyword.iskeyword(name) else name
 
 
 def deconflict(params: Iterable[ir.Param]) -> tuple[ir.Param, ...]:
