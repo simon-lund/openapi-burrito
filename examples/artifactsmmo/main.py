@@ -3,10 +3,11 @@
 import asyncio
 import os
 
-from client import AsyncClient
+import httpx
+from client import AsyncClient, AsyncHandlerT
 
 
-async def main():
+async def main() -> None:
     print("⚔️ Initializing Artifacts MMO Client...")
 
     client = AsyncClient(base_url="https://api.artifactsmmo.com")
@@ -16,32 +17,33 @@ async def main():
     if token:
 
         @client.middleware
-        async def auth(request, call_next):
+        async def auth(
+            request: httpx.Request, call_next: AsyncHandlerT
+        ) -> httpx.Response:
             request.headers["Authorization"] = f"Bearer {token}"
             return await call_next(request)
 
     # 1. Server status (public)
     print("\n--- 1. Server Status ---")
-    res = await client.GET("/")
-    if res.is_success:
-        data = res.data.get("data", {})
+    status = await client.GET("/")
+    if status.data is not None:
+        server = status.data["data"]
         print(
-            f"✅ Version: {data.get('version')} | "
-            f"Online: {data.get('characters_online')} players"
+            f"✅ Version: {server['version']} | "
+            f"Online: {server['characters_online']} players"
         )
     else:
-        print(f"❌ Failed: {res.error}")
+        print(f"❌ Failed: {status.error}")
 
     # 2. List items (public)
     print("\n--- 2. List Items ---")
-    res = await client.GET("/items", page=1, size=5)
-    if res.is_success:
-        items = res.data.get("data", [])
-        print(f"✅ Found {res.data.get('total', '?')} items")
-        for item in items[:5]:
+    items = await client.GET("/items", page=1, size=5)
+    if items.data is not None:
+        print(f"✅ Found {items.data.get('total', '?')} items")
+        for item in items.data["data"][:5]:
             print(f"   - {item['name']} ({item['code']})")
     else:
-        print(f"❌ Failed: {res.error}")
+        print(f"❌ Failed: {items.error}")
 
     # 3. My characters (requires auth)
     if not token:
@@ -49,14 +51,13 @@ async def main():
         return
 
     print("\n--- 3. My Characters ---")
-    res = await client.GET("/my/characters")
-    if res.is_success:
-        chars = res.data.get("data", [])
-        print(f"✅ Found {len(chars)} characters")
-        for char in chars:
-            print(f"   - {char['name']} (Level {char['level']})")
+    characters = await client.GET("/my/characters")
+    if characters.data is not None:
+        print(f"✅ Found {len(characters.data['data'])} characters")
+        for character in characters.data["data"]:
+            print(f"   - {character['name']} (Level {character['level']})")
     else:
-        print(f"❌ Failed: {res.error}")
+        print(f"❌ Failed: {characters.error}")
 
 
 if __name__ == "__main__":

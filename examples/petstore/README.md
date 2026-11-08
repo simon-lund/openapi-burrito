@@ -22,4 +22,4 @@ The demo shows:
 4. DELETE request to remove a pet
 
 Uses middleware for request logging and retry logic. See
-[docs/middleware.md](../../docs/middleware.md) for more patterns.
+[docs/03-middleware.md](../../docs/03-middleware.md) for more patterns.

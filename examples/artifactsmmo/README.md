@@ -28,4 +28,4 @@ The demo:
 ## Authentication
 
 The demo uses middleware to inject the Bearer token. See
-[docs/authentication.md](../../docs/authentication.md) for other patterns.
+[docs/02-authentication.md](../../docs/02-authentication.md) for other patterns.

@@ -5,21 +5,24 @@ import logging
 import random
 import time
 
-from client import AsyncClient
+import httpx
+from client import AsyncClient, AsyncHandlerT
 from client.models import Category, Pet, Tag
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger("petstore")
 
 
-async def main():
+async def main() -> None:
     print("🐶 Initializing Petstore Client...")
 
     client = AsyncClient(base_url="https://petstore3.swagger.io/api/v3")
 
     # Middleware: Log requests with timing
     @client.middleware
-    async def log_requests(request, call_next):
+    async def log_requests(
+        request: httpx.Request, call_next: AsyncHandlerT
+    ) -> httpx.Response:
         logger.info(f"--> {request.method} {request.url}")
         start = time.time()
         response = await call_next(request)
@@ -28,25 +31,27 @@ async def main():
 
     # Middleware: Retry on server errors
     @client.middleware
-    async def retry_on_error(request, call_next):
-        for attempt in range(3):
+    async def retry_on_error(
+        request: httpx.Request, call_next: AsyncHandlerT
+    ) -> httpx.Response:
+        response = await call_next(request)
+        for attempt in range(2):
+            if response.status_code not in {429, 500, 502, 503}:
+                break
+            await asyncio.sleep(2**attempt + random.uniform(0, 0.1))
             response = await call_next(request)
-            if response.status_code in [500, 502, 503, 429] and attempt < 2:
-                await asyncio.sleep(2**attempt + random.uniform(0, 0.1))
-                continue
-            return response
         return response
 
     # 1. Find available pets
     print("\n--- 1. Find Available Pets ---")
-    res = await client.GET("/pet/findByStatus", status="available")
-    if res.is_success:
-        pets = res.data
-        print(f"✅ Found {len(pets)} pets")
-        if pets:
-            print(f"   Sample: {pets[0]['name']} (ID: {pets[0]['id']})")
+    found = await client.GET("/pet/findByStatus", status="available")
+    if found.data is not None:
+        print(f"✅ Found {len(found.data)} pets")
+        if found.data:
+            sample = found.data[0]
+            print(f"   Sample: {sample['name']} (ID: {sample.get('id')})")
     else:
-        print(f"❌ Failed: {res.error}")
+        print(f"❌ Failed: {found.error}")
 
     # 2. Create a new pet
     print("\n--- 2. Create a Pet ---")
@@ -59,11 +64,11 @@ async def main():
         tags=[Tag(id=1, name="generated")],
         status="available",
     )
-    res = await client.POST("/pet", json=new_pet)
-    if res.is_success:
-        print(f"✅ Created: {res.data['name']} (ID: {res.data['id']})")
+    created = await client.POST("/pet", json=new_pet)
+    if created.data is not None:
+        print(f"✅ Created: {created.data['name']} (ID: {created.data.get('id')})")
     else:
-        print(f"❌ Failed: {res.error}")
+        print(f"❌ Failed: {created.error}")
         return
 
     # 3. Get the pet by ID — unwrap() raises ResponseError on failure
@@ -73,11 +78,11 @@ async def main():
 
     # 4. Delete the pet
     print(f"\n--- 4. Delete Pet {pet_id} ---")
-    res = await client.DELETE("/pet/{pet_id}", pet_id=pet_id)
-    if res.is_success:
+    deleted = await client.DELETE("/pet/{pet_id}", pet_id=pet_id)
+    if deleted.is_success:
         print("✅ Deleted")
     else:
-        print(f"❌ Failed: {res.error}")
+        print(f"❌ Failed: {deleted.error}")
 
 
 if __name__ == "__main__":
