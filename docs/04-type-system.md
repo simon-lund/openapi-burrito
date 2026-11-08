@@ -147,9 +147,8 @@ class Response[T, E]:
 ```python
 res = api.GET("/users/{user_id}", user_id=123)
 
-if res.is_success:
-    user = res.data  # Typed as User | None
-    print(user["name"])
+if res.data is not None:
+    print(res.data["name"])  # Narrowed from User | None to User
 elif res.is_redirect:
     print(f"Redirecting to: {res.headers['Location']}")
 elif res.is_error:

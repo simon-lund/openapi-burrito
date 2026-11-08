@@ -106,11 +106,14 @@ and your runtime should stay out of the way.**
 - **No inheritance hooks, no plugins, no config file.** One command in, one
   small readable package out.
 
-If you want runtime validation and rich models, you want a
-[pydantic](https://docs.pydantic.dev)-based generator like
+If you want rich model classes with a deserialization layer, you want a
+generator like
 [openapi-python-client](https://github.com/openapi-generators/openapi-python-client)
-— that's a great tool with a different philosophy. openapi-burrito is for
-when you'd rather have the thinnest possible typed layer over httpx.
+(attrs), or
+[datamodel-code-generator](https://github.com/datamodel-code-generator/datamodel-code-generator)
+for pydantic models without a client. Those are great tools with a different
+philosophy. openapi-burrito is for when you'd rather have the thinnest possible
+typed layer over httpx.
 
 If you build **FastAPI** services, this will feel like home: the same
 httpx + type-hints + async idioms you already use, pointed at the APIs you

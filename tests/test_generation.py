@@ -8,6 +8,7 @@ of in users' projects.
 """
 
 import asyncio
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -406,6 +407,24 @@ class TestClientModes:
 # ---------------------------------------------------------------------------
 # Type-check the generated output
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("example", ["petstore", "artifactsmmo"])
+def test_example_script_passes_strict_type_checks(example: str, tmp_path: Path) -> None:
+    """The examples teach how to use the types, so they must type-check too."""
+    source = Path(__file__).parents[1] / "examples" / example
+    generate(source / "openapi.json", tmp_path / "client")
+    shutil.copy(source / "main.py", tmp_path)
+    (tmp_path / "pyrightconfig.json").write_text('{"typeCheckingMode": "strict"}')
+    pyright = str(Path(sys.executable).parent / "basedpyright")
+    for command in (
+        [sys.executable, "-m", "mypy", "--strict", "--no-error-summary", "main.py"],
+        [pyright, "--pythonpath", sys.executable, "main.py"],
+    ):
+        result = subprocess.run(
+            command, cwd=tmp_path, capture_output=True, text=True, timeout=120
+        )
+        assert result.returncode == 0, result.stdout
 
 
 @pytest.mark.parametrize("spec_name", ["petstore", "edgecases"])
